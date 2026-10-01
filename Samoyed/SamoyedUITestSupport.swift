@@ -58,7 +58,15 @@ enum SamoyedUITestSupport {
         let repository = SamoyedDocumentRepository(fileURL: fileURL)
 
         if processInfo.environment[resetKey] == "1" {
-            try? fileManager.removeItem(at: fileURL)
+            // Reset only the isolated QA directory, including SQLite, WAL and migration backups.
+            let fixtureDirectory = fileURL.deletingLastPathComponent()
+            do {
+                if fileManager.fileExists(atPath: fixtureDirectory.path) {
+                    try fileManager.removeItem(at: fixtureDirectory)
+                }
+            } catch {
+                preconditionFailure("Unable to reset isolated UI fixtures: \(error)")
+            }
             SamoyedTintPreference.save(.ocean)
             prepareFixture(
                 fixture,
