@@ -13,3 +13,5 @@ DerivedData/
 
 # Generated local build server configuration
 buildServer.json
+output/playwright/
+.playwright-cli/

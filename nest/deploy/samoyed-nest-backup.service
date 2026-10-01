@@ -1,0 +1,10 @@
+[Unit]
+Description=Consistent Samoyed Nest SQLite backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-samoyed-nest
+Nice=10
+IOSchedulingClass=idle

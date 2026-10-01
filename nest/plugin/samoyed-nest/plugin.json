@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "samoyed-nest",
+  "version": "0.1.0",
+  "description": "编排 Samoyed Routine，查询执行记录并管理时间轴 Note。",
+  "author": { "name": "Samoyed" },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Samoyed Nest",
+        "shortDescription": "日程编排与时间轴 Note",
+        "longDescription": "连接自己的 Samoyed Nest 账户，管理可重复 Routine、星期规则、日期例外与时间轴 Note。手机显示并离线执行，同步后可在此读取记录。",
+        "developerName": "Samoyed",
+        "category": "Productivity",
+        "capabilities": ["Interactive"],
+        "defaultPrompt": "帮我整理明天的 Routine，并保存到 Samoyed Nest。"
+      }
+    }
+  }
+}

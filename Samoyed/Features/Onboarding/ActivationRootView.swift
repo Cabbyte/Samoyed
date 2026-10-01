@@ -93,6 +93,24 @@ struct ActivationRootView: View {
                 }
                 .accessibilityIdentifier("activation-import")
             }
+
+            Section {
+                NavigationLink {
+                    NestAccountView()
+                } label: {
+                    ActivationChoiceRow(
+                        title: "Connect to Samoyed Nest",
+                        subtitle: "Sign in to use your routines and notes across devices.",
+                        systemImage: "person.crop.circle"
+                    )
+                }
+                .accessibilityIdentifier("activation-nest")
+
+                Button("Continue Without a Routine") {
+                    store.continueWithoutRoutine()
+                }
+                .accessibilityIdentifier("activation-skip")
+            }
         }
         .listStyle(.insetGrouped)
     }

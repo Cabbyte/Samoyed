@@ -1,0 +1,37 @@
+{
+  "name": "samoyed-nest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate-artifact.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "dev": "tsx src/node.ts",
+    "test:d1": "NEST_TEST_DATABASE=d1 tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@better-auth/cimd": "1.7.7",
+    "@better-auth/mcp": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "@better-auth/passkey": "1.7.7",
+    "@hono/node-server": "^1.19.0",
+    "@js-temporal/polyfill": "0.5.1",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "better-auth": "1.7.7",
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.12",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261001.1",
+    "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.11",
+    "esbuild": "^0.25.0",
+    "miniflare": "4.20260730.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  }
+}

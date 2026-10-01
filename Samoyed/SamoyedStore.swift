@@ -51,6 +51,7 @@ final class SamoyedStore {
     // `document` 是持久化数据在内存中的“当前快照”。
     // SwiftUI 页面几乎都间接依赖它。
     var document: SamoyedDocument = .init()
+    private var persistedDocument: SamoyedDocument = .init()
     var tintPreset: AppTintPreset
 
     // 这些字段是 UI 层状态，而不是业务模型本身：
@@ -76,10 +77,11 @@ final class SamoyedStore {
     // 这样做有两个教育意义：
     // 1. UI 层不碰文件系统细节
     // 2. 预览/测试可以替换 repository 的落点
-    private let documentRepository: SamoyedDocumentRepository
+    private var documentRepository: SamoyedDocumentRepository
+    let nest = NestAccountController()
     private let validationLogger: ValidationEventLogger
-    private let feedbackService: FeedbackService
-    private let suggestionService: SuggestionService
+    private var feedbackService: FeedbackService { FeedbackService(repository: documentRepository) }
+    private var suggestionService: SuggestionService { SuggestionService(repository: documentRepository) }
     private var nowVisibleDays: Set<LocalDay> = []
 
     init(
@@ -88,10 +90,78 @@ final class SamoyedStore {
     ) {
         // tint 偏好是 UI 级偏好，不属于 document。
         tintPreset = SamoyedTintPreference.load()
-        self.documentRepository = documentRepository
+        self.documentRepository = documentRepository.scoped(to: "local")
         self.validationLogger = validationLogger
-        feedbackService = FeedbackService(repository: documentRepository)
-        suggestionService = SuggestionService(repository: documentRepository)
+    }
+
+    func nestDatabase(partition: String) throws -> NestLocalDatabase { try documentRepository.database(partition: partition) }
+
+    func recordNestDiagnostic() {
+        #if DEBUG
+        do {
+            let db = try documentRepository.database()
+            let record: [String: Any] = ["recordedAt": ISO8601DateFormatter().string(from: .now), "databasePath": db.databasePath, "partition": db.partition, "pendingOperations": try db.pendingOperations().count, "noteConflicts": try db.noteConflicts().count, "routineCount": document.savedTemplates.count, "planCount": document.dayPlans.count, "noteCount": document.timelineNotes.count, "hasCursor": try db.cursor() != nil]
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("nest-sync-diagnostic.json")
+            try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]).write(to: url, options: .atomic)
+        } catch { /* Diagnostics must not affect account data or the sync result. */ }
+        #endif
+    }
+
+    func switchNestPartition(_ partition: String) throws {
+        // Clear visible state even if the destination partition cannot be opened.
+        let scoped = documentRepository.scoped(to: partition)
+        documentRepository = scoped
+        UserDefaults(suiteName: SamoyedSharedConfig.appGroupID)?.set(partition, forKey: "nest.activePartition")
+        document = .init(); persistedDocument = .init(); selectedBlockID = nil
+        libraryNavigationPath = []; nowVisibleDays = []; lastErrorMessage = nil
+        selectedDate = .today(); bootstrapState = .ready
+        bootstrapDocument()
+        refreshVisualSystemSurfaces()
+    }
+
+    func continueWithoutRoutine() {
+        UserDefaults.standard.set(true, forKey: "samoyed.localSetupSkipped")
+        bootstrapState = .ready
+        selectedTab = .today
+    }
+
+    func saveTimelineNote(_ note: TimelineNote) throws {
+        guard !note.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              TimeZone(identifier: note.timeZoneID) != nil else { throw CocoaError(.coderInvalidValue) }
+        let outcome = try documentRepository.mutate { document in
+            if let index = document.timelineNotes.firstIndex(where: { $0.id == note.id }) {
+                document.timelineNotes[index] = note
+            } else { document.timelineNotes.append(note) }
+        }
+        UserDefaults.standard.set(true, forKey: "samoyed.localSetupSkipped")
+        document = outcome.document
+        persistedDocument = document
+        bootstrapState = .ready
+        documentDidChange()
+    }
+
+    func deleteTimelineNote(_ note: TimelineNote) throws {
+        var deleted = note
+        deleted.deletedAt = .now
+        deleted.updatedAt = .now
+        try saveTimelineNote(deleted)
+    }
+
+    func domainConflicts() throws -> [NestDomainConflict] { try documentRepository.database().domainConflicts() }
+
+    func resolveDomainConflict(_ conflict: NestDomainConflict, keepLocal: Bool) throws {
+        try documentRepository.database().resolveDomainConflict(operationID: conflict.id, keepLocal: keepLocal)
+        reload(); nest.scheduleSync()
+    }
+
+    func noteConflicts() throws -> [NestNoteConflict] {
+        try documentRepository.database().noteConflicts()
+    }
+
+    func resolveNoteConflict(_ conflict: NestNoteConflict, choice: NestNoteConflictChoice) throws {
+        try documentRepository.database().resolveNoteConflict(operationID: conflict.id, choice: choice)
+        reload()
+        nest.scheduleSync()
     }
 
     // MARK: Bootstrap
@@ -114,9 +184,10 @@ final class SamoyedStore {
                 document = SamoyedDocument()
             }
 
+            persistedDocument = document
             isLoaded = true
             dismissError()
-            if document.isEmptyForActivation {
+            if documentRepository.partition == "local" && document.isEmptyForActivation && !UserDefaults.standard.bool(forKey: "samoyed.localSetupSkipped") {
                 bootstrapState = .needsActivation
             } else {
                 bootstrapState = .ready
@@ -146,6 +217,12 @@ final class SamoyedStore {
     func ensureMaterialized(for date: LocalDay) {
         do {
             guard bootstrapState == .ready else { return }
+            if documentRepository.partition != "local" {
+                if let plan = try documentRepository.database().materializeCachedDay(date), document.dayPlan(for: date) == nil {
+                    upsert(dayPlan: plan); persistedDocument = document
+                }
+                return
+            }
 
             let materialized = try TemplateEngine.ensureMaterializedDayPlan(
                 for: date,
@@ -500,6 +577,7 @@ final class SamoyedStore {
                 )
             }
             document = outcome.document
+            persistedDocument = document
             selectedDate = today
             selectedTab = .now
             selectedBlockID = nil
@@ -581,6 +659,7 @@ final class SamoyedStore {
             }
         }
         document = outcome.document
+        persistedDocument = document
         documentDidChange()
     }
 
@@ -590,6 +669,7 @@ final class SamoyedStore {
                 document.plannerSettings = PlannerSettings()
             }
             document = outcome.document
+            persistedDocument = document
             documentDidChange()
         } catch {
             presentError(error)
@@ -724,6 +804,13 @@ final class SamoyedStore {
         source: DayTemplateSelectionSource,
         forceReplace: Bool = false
     ) throws -> DayTemplateChoiceCommandResult {
+        if documentRepository.partition != "local" {
+            if document.dayPlan(for: date)?.containsCompletedTasks == true && !forceReplace { return .requiresConfirmation }
+            document.daySelections.removeAll { $0.date == date }
+            document.daySelections.append(.init(date: date, selectedTemplateID: templateID, source: source))
+            try persistDocument()
+            return .applied
+        }
         let outcome = try TemplateEngine.chooseTemplate(
             for: date,
             templateID: templateID,
@@ -792,13 +879,21 @@ final class SamoyedStore {
 
     private func persistDocument() throws {
         // 文档写盘后，统一走一个“文档已变更”钩子，刷新所有系统表面。
-        try documentRepository.save(document)
-        documentDidChange()
+        do {
+            document = try documentRepository.save(document, mergingFrom: persistedDocument)
+            persistedDocument = document
+            documentDidChange()
+        } catch {
+            document = (try? documentRepository.load()) ?? persistedDocument
+            persistedDocument = document
+            throw error
+        }
     }
 
     private func reloadAfterServiceMutation() throws {
         if let latest = try documentRepository.load() {
             document = latest
+            persistedDocument = latest
         }
         documentDidChange()
     }
@@ -812,6 +907,7 @@ final class SamoyedStore {
         syncCurrentBlockLiveActivity(
             referenceDate: SamoyedSimulationClock.adjusted(.now)
         )
+        nest.scheduleSync()
     }
 
     private func refreshVisualSystemSurfaces() {

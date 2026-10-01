@@ -70,6 +70,11 @@ struct SuggestionService {
             var candidate = document
             switch suggestion.kind {
             case .dailyPlan:
+                // Nest v1 accepts explicit corrections, not a whole-plan replacement.
+                // Keep the suggestion pending instead of accepting an unsyncable plan.
+                guard repository.partition == "local" else {
+                    throw SuggestionServiceError.connectedDailyPlanUnsupported
+                }
                 guard let payload = suggestion.dailyPlanPayload else {
                     throw SuggestionServiceError.invalidSuggestion
                 }

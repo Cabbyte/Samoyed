@@ -1,0 +1,11 @@
+samoyed.protium.top {
+  encode zstd gzip
+  request_body {
+    max_size 512KB
+  }
+  reverse_proxy samoyed-nest:8787 {
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-Proto https
+    flush_interval -1
+  }
+}

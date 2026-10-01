@@ -3,9 +3,8 @@ import Foundation
 // `SamoyedDocumentRepository` 是共享文档的唯一 concrete 存储入口。
 //
 // 这层只负责三件事：
-// 1. 找到 document.json 在哪里
-// 2. 原子地读/写这份 JSON
-// 3. 在需要时做带文件协调(file coordination)的 mutate
+// App Group SQLite is the single write boundary for the app and extensions.
+// Legacy JSON is imported once and retained as a migration backup.
 //
 // 它刻意“不知道” screen model、widget snapshot、页面状态这些上层概念。
 // 这是为了避免“存储层顺便懂 UI”，导致维护时认知边界越来越糊。
@@ -37,6 +36,17 @@ struct SamoyedDocumentRepository {
     private let documentURLOverride: URL?
     private let appGroupID: String?
     private let fileManager: FileManager
+    private var partitionOverride: String?
+
+    func scoped(to partition: String) -> Self {
+        var copy = self
+        copy.partitionOverride = partition
+        return copy
+    }
+
+    var partition: String {
+        partitionOverride ?? (appGroupID.flatMap { UserDefaults(suiteName: $0)?.string(forKey: "nest.activePartition") } ?? "local")
+    }
 
     init(
         fileURL: URL,
@@ -69,51 +79,27 @@ struct SamoyedDocumentRepository {
         SamoyedDocumentRepository(appGroupID: SamoyedSharedConfig.appGroupID)
     }
 
-    func load() throws -> SamoyedDocument? {
-        // “文件不存在”在这里不是异常，而是“尚未初始化”的正常状态。
-        let url = try documentURL()
-
-        guard fileManager.fileExists(atPath: url.path) else {
-            return nil
-        }
-
-        return try coordinateReading(url) { coordinatedURL in
-            try readDocument(from: coordinatedURL)
-        }
-    }
+    func load() throws -> SamoyedDocument? { try database().load() }
 
     func save(_ document: SamoyedDocument) throws {
-        // save 不做业务级校验，只负责写盘。
-        let url = try documentURL()
-        try coordinateWriting(url) { coordinatedURL in
-            try writeDocument(document, to: coordinatedURL)
-        }
+        _ = try database().mutate { $0 = document }
     }
 
-    func mutate<Value>(
-        _ body: (inout SamoyedDocument) throws -> Value
-    ) throws -> MutationOutcome<Value> {
-        // `mutate` 是这里最值得学习的方法：
-        // 它把“读当前文档 -> 在内存里修改 -> 如果有变化则原子写回”封装成一个模板。
-        // 这样调用者只需要关心“我要怎么改 document”，不用重复写存储样板代码。
-        let url = try documentURL()
+    /// Compare the caller's base with the latest transaction snapshot. Preserve unrelated
+    /// extension writes and reject concurrent edits to the same object instead of losing data.
+    func save(_ document: SamoyedDocument, mergingFrom base: SamoyedDocument) throws -> SamoyedDocument {
+        try mutate { latest in
+            latest = try NestDocumentMerge.merge(base: base, proposed: document, latest: latest)
+        }.document
+    }
 
-        return try coordinateWriting(url) { coordinatedURL in
-            let current = try readDocumentIfPresent(from: coordinatedURL) ?? SamoyedDocument()
-            var updated = current
-            let value = try body(&updated)
+    func mutate<Value>(_ body: (inout SamoyedDocument) throws -> Value) throws -> MutationOutcome<Value> {
+        try database().mutate(body)
+    }
 
-            // 只有 document 真变了才写盘，避免无意义 I/O。
-            if updated != current {
-                try writeDocument(updated, to: coordinatedURL)
-            }
-
-            return MutationOutcome(
-                value: value,
-                changed: updated != current,
-                document: updated
-            )
-        }
+    func database(partition: String? = nil) throws -> NestLocalDatabase {
+        let legacyURL = try documentURL()
+        return try NestLocalDatabase(url: legacyURL.deletingPathExtension().appendingPathExtension("sqlite"), partition: partition ?? self.partition, legacyURL: legacyURL)
     }
 
     private func documentURL() throws -> URL {
@@ -135,91 +121,43 @@ struct SamoyedDocumentRepository {
             .appending(path: SamoyedSharedConfig.documentFileName)
     }
 
-    private func coordinateReading<T>(
-        _ url: URL,
-        body: (URL) throws -> T
-    ) throws -> T {
-        // `NSFileCoordinator` 用于 app / widget / extension 间共享文件访问协调。
-        // 不用它也可能“看起来能跑”，但并发访问时更容易出数据竞争问题。
-        var coordinationError: NSError?
-        var result: Result<T, Error>?
+}
 
-        NSFileCoordinator(filePresenter: nil).coordinate(
-            readingItemAt: url,
-            options: [],
-            error: &coordinationError
-        ) { coordinatedURL in
-            result = Result {
-                try body(coordinatedURL)
+enum NestDocumentMerge {
+    static func merge(base: SamoyedDocument, proposed: SamoyedDocument, latest: SamoyedDocument) throws -> SamoyedDocument {
+        func mergeItems<T: Equatable>(_ base: [T], _ proposed: [T], _ latest: [T], key: (T) -> String) throws -> [T] {
+            func map(_ values: [T]) throws -> [String: T] {
+                var result: [String: T] = [:]
+                for value in values {
+                    guard result.updateValue(value, forKey: key(value)) == nil else { throw CocoaError(.fileReadCorruptFile) }
+                }
+                return result
             }
-        }
-
-        if let result {
-            return try result.get()
-        }
-        if let coordinationError {
-            throw coordinationError
-        }
-        throw RepositoryError.coordinationFailed(operation: "read")
-    }
-
-    private func coordinateWriting<T>(
-        _ url: URL,
-        body: (URL) throws -> T
-    ) throws -> T {
-        // 写前先确保目录存在，这是文件存储层最常见的防御式步骤。
-        try fileManager.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-
-        var coordinationError: NSError?
-        var result: Result<T, Error>?
-
-        NSFileCoordinator(filePresenter: nil).coordinate(
-            writingItemAt: url,
-            options: .forMerging,
-            error: &coordinationError
-        ) { coordinatedURL in
-            result = Result {
-                try body(coordinatedURL)
+            let old = try map(base), desired = try map(proposed), current = try map(latest)
+            var result = latest
+            for id in Set(old.keys).union(desired.keys) where old[id] != desired[id] {
+                guard current[id] == old[id] || current[id] == desired[id] else { throw CocoaError(.fileWriteUnknown) }
+                result.removeAll { key($0) == id }
+                if let value = desired[id] { result.append(value) }
             }
+            return result
         }
-
-        if let result {
-            return try result.get()
+        var result = latest
+        result.dayPlans = try mergeItems(base.dayPlans, proposed.dayPlans, latest.dayPlans) { $0.id.uuidString }
+        result.savedTemplates = try mergeItems(base.savedTemplates, proposed.savedTemplates, latest.savedTemplates) { $0.id.uuidString }
+        result.timelineNotes = try mergeItems(base.timelineNotes, proposed.timelineNotes, latest.timelineNotes) { $0.id.uuidString }
+        result.weekdayRules = try mergeItems(base.weekdayRules, proposed.weekdayRules, latest.weekdayRules) { String($0.weekday.rawValue) }
+        result.overrides = try mergeItems(base.overrides, proposed.overrides, latest.overrides) { "\($0.date.year)-\($0.date.month)-\($0.date.day)" }
+        result.daySelections = try mergeItems(base.daySelections, proposed.daySelections, latest.daySelections) { "\($0.date.year)-\($0.date.month)-\($0.date.day):\($0.selectedAt.timeIntervalSince1970)" }
+        result.feedbackEvents = try mergeItems(base.feedbackEvents, proposed.feedbackEvents, latest.feedbackEvents) { $0.id.uuidString }
+        result.suggestions = try mergeItems(base.suggestions, proposed.suggestions, latest.suggestions) { $0.id.uuidString }
+        result.routineRevisionSnapshots = try mergeItems(base.routineRevisionSnapshots, proposed.routineRevisionSnapshots, latest.routineRevisionSnapshots) { $0.id.uuidString }
+        if proposed.plannerSettings != base.plannerSettings {
+            guard latest.plannerSettings == base.plannerSettings || latest.plannerSettings == proposed.plannerSettings else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            result.plannerSettings = proposed.plannerSettings
         }
-        if let coordinationError {
-            throw coordinationError
-        }
-        throw RepositoryError.coordinationFailed(operation: "write")
-    }
-
-    private func readDocumentIfPresent(from url: URL) throws -> SamoyedDocument? {
-        guard fileManager.fileExists(atPath: url.path) else {
-            return nil
-        }
-
-        return try readDocument(from: url)
-    }
-
-    private func readDocument(from url: URL) throws -> SamoyedDocument {
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(SamoyedDocument.self, from: data)
-    }
-
-    private func writeDocument(
-        _ document: SamoyedDocument,
-        to url: URL
-    ) throws {
-        // `.atomic` 会先写临时文件，再替换正式文件，能减少半写入损坏风险。
-        let data = try prettyEncoder().encode(document)
-        try data.write(to: url, options: .atomic)
-    }
-
-    private func prettyEncoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
+        return result
     }
 }

@@ -1,0 +1,15 @@
+import { serve } from '@hono/node-server';
+import { createApp } from './app.js';
+import { SQLiteAdapter } from './storage/sqlite.js';
+import { Repository } from './storage/repository.js';
+import { createNestAuth } from './auth.js';
+import { migrateAuth } from './auth-storage.js';
+import { selfHostedApp } from './self-hosted.js';
+const origin=process.env.NEST_ORIGIN,secret=process.env.BETTER_AUTH_SECRET,instanceID=process.env.NEST_INSTANCE_ID;
+if(!origin||new URL(origin).origin!==origin||!secret||secret.length<32||!instanceID)throw new Error('Missing valid Nest origin, secret or instance ID');
+const storage=new SQLiteAdapter(process.env.NEST_DATABASE??'nest.sqlite');migrateAuth(storage.db);
+const repo=new Repository(storage),config={origin,secret,instanceID};
+const identity=createNestAuth(storage.db,config,repo),client=await identity.initialize();
+const app=selfHostedApp(repo,identity,config,client);
+const server=serve({fetch:app.fetch,hostname:process.env.NEST_LISTEN_HOST??'127.0.0.1',port:Number(process.env.PORT??8787)});
+process.on('SIGTERM',()=>server.close(()=>{storage.db.close();process.exit(0);}));

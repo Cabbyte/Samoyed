@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Samoyed Nest backup at 05:10 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 05:10:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

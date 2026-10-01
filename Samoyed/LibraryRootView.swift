@@ -40,6 +40,13 @@ struct LibraryRootView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                if let conflicts = try? store.noteConflicts(), !conflicts.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink { NestNoteConflictsView() } label: {
+                            Label("Sync conflicts", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         NavigationLink(value: LibraryDestination.appearance) {
@@ -91,6 +98,12 @@ private struct LibraryContent: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+
+            Section {
+                NavigationLink { NestAccountView() } label: {
+                    Label("Samoyed Nest · \(store.nest.status)", systemImage: "person.crop.circle")
+                }
+            }
 
             if model.savedTemplates.isEmpty {
                 Section {

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		B10000012EF3000000A74A6B /* SamoyedWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000022EF3000000A74A6B /* SamoyedWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA1000000000000000000001 /* GRDB app */ = {isa = PBXBuildFile; productRef = AA1000000000000000000003; };
+		AA1000000000000000000002 /* GRDB widget */ = {isa = PBXBuildFile; productRef = AA1000000000000000000004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +108,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -113,6 +116,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1000000000000000000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -181,6 +185,7 @@
 			);
 			name = Samoyed;
 			packageProductDependencies = (
+				AA1000000000000000000003,
 			);
 			productName = Samoyed;
 			productReference = 2766195A2EF2562D00A74A6B /* Samoyed.app */;
@@ -204,6 +209,7 @@
 			);
 			name = SamoyedWidgetExtension;
 			packageProductDependencies = (
+				AA1000000000000000000004,
 			);
 			productName = SamoyedWidgetExtension;
 			productReference = B10000022EF3000000A74A6B /* SamoyedWidgetExtension.appex */;
@@ -234,6 +240,13 @@
 		};
 /* End PBXNativeTarget section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AA1000000000000000000005 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/groue/GRDB.swift.git"; requirement = {kind = upToNextMajorVersion; minimumVersion = 7.9.0; }; };
+/* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+		AA1000000000000000000003 = {isa = XCSwiftPackageProductDependency; package = AA1000000000000000000005; productName = GRDB; };
+		AA1000000000000000000004 = {isa = XCSwiftPackageProductDependency; package = AA1000000000000000000005; productName = GRDB; };
+/* End XCSwiftPackageProductDependency section */
 /* Begin PBXProject section */
 		276619522EF2562D00A74A6B /* Project object */ = {
 			isa = PBXProject;
@@ -265,6 +278,7 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2766195B2EF2562D00A74A6B /* Products */;
+			packageReferences = (AA1000000000000000000005);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -364,7 +378,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SAMOYED_APP_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -407,7 +421,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SAMOYED_APP_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "$(SAMOYED_APP_PROVISIONING_PROFILE)";
@@ -565,7 +579,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SAMOYED_WIDGET_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -600,7 +614,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SAMOYED_WIDGET_BUNDLE_ID)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "$(SAMOYED_WIDGET_PROVISIONING_PROFILE)";

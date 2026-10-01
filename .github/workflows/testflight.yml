@@ -318,7 +318,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$app_info")" = "Samoyed"
           test -f "$app_path/Samoyed60x60@2x.png"
           plutil -convert json -o - "$app_info" \
-            | jq -e '[.CFBundleURLTypes[]?.CFBundleURLSchemes[]?] == ["samoyed"]'
+            | jq -e '[.CFBundleURLTypes[]?.CFBundleURLSchemes[]?] == ["samoyed", "top.protium.samoyed"]'
 
           codesign -d --entitlements :- "$app_path" > "$RUNNER_TEMP/app-entitlements.plist" 2>/dev/null
           codesign -d --entitlements :- "$widget_path" > "$RUNNER_TEMP/widget-entitlements.plist" 2>/dev/null

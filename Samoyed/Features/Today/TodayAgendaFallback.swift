@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TodayAgendaFallback: View {
     let model: TodayScreenModel
+    let notes: [TimelineNote]
+    let onSelectNote: (TimelineNote) -> Void
     let currentMinute: Int?
     let selectedBlockID: UUID?
     let selectedOpenSlotID: UUID?
@@ -21,6 +23,20 @@ struct TodayAgendaFallback: View {
 
     var body: some View {
         List {
+            if !notes.isEmpty {
+                Section("Notes") {
+                    ForEach(notes) { note in
+                        Button { onSelectNote(note) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(note.occurredAt, style: .time)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(note.text).foregroundStyle(.primary)
+                            }
+                        }
+                        .accessibilityIdentifier("timeline-note-\(note.id.uuidString)")
+                    }
+                }
+            }
             Section {
                 ForEach(entries) { entry in
                     Button {

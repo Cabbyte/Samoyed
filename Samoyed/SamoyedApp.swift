@@ -20,8 +20,12 @@ struct SamoyedApp: App {
         // 在 iPhone 上通常可以粗略理解为“主界面容器”。
         WindowGroup {
             #if DEBUG
-            SamoyedQAViewport {
-                ContentView()
+            if ProcessInfo.processInfo.arguments.contains("--nest-connection-probe") {
+                NestConnectionProbeView()
+            } else if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--nest-acceptance-") }) {
+                NestDeviceAcceptanceView()
+            } else {
+                SamoyedQAViewport { ContentView() }
             }
             #else
             ContentView()
@@ -102,6 +106,7 @@ struct ContentView: View {
                 // `.task` 会在视图出现后执行一次异步/副作用逻辑。
                 // 可以把它看成“和这个 View 生命周期绑定的启动钩子”。
                 store.loadIfNeeded()
+                await store.nest.restore(store: store)
                 consumePendingExternalRoute()
                 SamoyedSystemSurfaceDormancy.apply()
             }
@@ -125,8 +130,10 @@ struct ContentView: View {
                 // 重新激活时需要一次“轻量复位”。
                 guard newPhase == .active, store.isLoaded else { return }
                 store.reload()
+                store.nest.scheduleSync()
                 consumePendingExternalRoute()
             }
+            .onChange(of: store.selectedDate) { _, _ in store.nest.scheduleSync() }
             .sheet(item: $pendingRoutineImport) { pendingImport in
                 RoutineImportPreviewSheet(pendingImport: pendingImport)
                     .environment(store)

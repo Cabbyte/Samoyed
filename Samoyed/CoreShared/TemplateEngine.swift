@@ -335,15 +335,17 @@ public enum TemplateEngine {
                 }
                 .map { blueprint in
                     // 模板任务在实例化时一律变成“未完成”的真实任务。
-                    TaskItem(
+                    var task = TaskItem(
                         title: blueprint.title,
                         order: blueprint.order,
                         isCompleted: false,
                         completedAt: nil
                     )
+                    task.sourceTaskID = blueprint.id
+                    return task
                 }
 
-            return TimeBlock(
+            var block = TimeBlock(
                 id: blockID,
                 dayPlanID: dayPlanID,
                 parentBlockID: parentBlockID,
@@ -354,6 +356,8 @@ public enum TemplateEngine {
                 tasks: tasks,
                 timing: blockTemplate.timing
             )
+            block.sourceBlockID = blockTemplate.id
+            return block
         }
 
         let plan = DayPlan(

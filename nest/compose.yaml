@@ -1,0 +1,36 @@
+name: samoyed-nest
+services:
+  nest:
+    image: ${NEST_IMAGE:?Specify an immutable version image}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    env_file: /etc/samoyed-nest/nest.env
+    environment:
+      NEST_DATABASE: /data/nest.sqlite
+      PORT: 8787
+      NEST_LISTEN_HOST: 0.0.0.0
+    networks:
+      edge:
+        aliases: [samoyed-nest]
+    volumes:
+      - nest-data:/data
+      - /var/backups/samoyed-nest:/backups
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  nest-data:
+    name: samoyed-nest-data
+networks:
+  edge:
+    external: true
+    name: acornary-edge-v1

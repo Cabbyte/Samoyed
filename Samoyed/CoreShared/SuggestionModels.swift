@@ -171,6 +171,7 @@ enum SuggestionServiceError: Error, Equatable, Sendable {
     case suggestionNotPending(SuggestionLifecycleState)
     case requiresExecutionStateConfirmation(LocalDay)
     case targetDateMismatch
+    case connectedDailyPlanUnsupported
 }
 
 extension SuggestionServiceError: LocalizedError {
@@ -188,6 +189,8 @@ extension SuggestionServiceError: LocalizedError {
             return "This day already has execution state and cannot be replaced without confirmation."
         case .targetDateMismatch:
             return "The suggested plan does not match its target date."
+        case .connectedDailyPlanUnsupported:
+            return "This daily plan suggestion is still saved for review. While connected, arrange this day through Samoyed Nest."
         }
     }
 }
