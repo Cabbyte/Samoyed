@@ -436,11 +436,11 @@ final class SamoyedP0UITests: XCTestCase {
         _ element: XCUIElement,
         attempts: Int = 4
     ) -> Bool {
-        if element.waitForExistence(timeout: 1) { return true }
+        if element.waitForExistence(timeout: 1), element.isHittable { return true }
 
         for _ in 0..<attempts {
             app.swipeUp()
-            if element.waitForExistence(timeout: 1) { return true }
+            if element.waitForExistence(timeout: 1), element.isHittable { return true }
         }
 
         return false
