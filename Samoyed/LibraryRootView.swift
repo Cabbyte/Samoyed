@@ -84,6 +84,14 @@ private struct LibraryContent: View {
 
     var body: some View {
         List {
+            Text("Choose routines, review suggestions, and keep your day running.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+
             if model.savedTemplates.isEmpty {
                 Section {
                     ContentUnavailableView {
@@ -118,10 +126,11 @@ private struct LibraryContent: View {
                 NavigationLink {
                     RoutineDetailView(routineID: current.id)
                 } label: {
-                    LibraryRoutineRow(
-                        routine: current,
-                        subtitle: ["Running", current.timeRangeText].compactMap { $0 }.joined(separator: " · "),
-                        showsSelection: true
+                    LibrarySummaryRow(
+                        title: current.title,
+                        subtitle: ["Running", current.timeRangeText, "\(current.totalBlockCount) blocks"]
+                            .compactMap { $0 }.joined(separator: " · "),
+                        status: "RUNNING"
                     )
                 }
                 .accessibilityIdentifier("library-current-routine")
@@ -136,20 +145,17 @@ private struct LibraryContent: View {
     @ViewBuilder
     private var suggestionsSection: some View {
         let pending = store.document.suggestions.filter { $0.lifecycleState == .pending }
+        let changeCount = pending.reduce(0) { $0 + $1.changes.count }
         if !pending.isEmpty {
             Section("Suggestions") {
                 NavigationLink(value: LibraryDestination.suggestions) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Label(
-                            pending.contains(where: { $0.kind == .dailyPlan })
-                                ? "Tomorrow’s Plan"
-                                : "Routine Improvements",
-                            systemImage: "sparkles"
-                        )
-                        Text("\(pending.reduce(0) { $0 + max(1, $1.changes.count) }) changes · Ready to review")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    LibrarySummaryRow(
+                        title: pending.contains(where: { $0.kind == .dailyPlan })
+                            ? "Tomorrow’s Plan" : "Routine Improvements",
+                        subtitle: changeCount == 0 ? "Ready to review"
+                            : "\(changeCount) changes · Ready to review",
+                        status: "READY"
+                    )
                 }
                 .accessibilityIdentifier("library-suggestions")
             }
@@ -159,24 +165,16 @@ private struct LibraryContent: View {
     @ViewBuilder
     private var routinesSection: some View {
         Section("Routines") {
-            ForEach(model.savedTemplates.filter { !$0.isCurrentForToday }.prefix(3)) { routine in
-                NavigationLink {
-                    RoutineDetailView(routineID: routine.id)
-                } label: {
-                    LibraryRoutineRow(
-                        routine: routine,
-                        subtitle: routine.timeRangeText ?? "Reusable routine",
-                        showsSelection: false
-                    )
-                }
-            }
-
             NavigationLink(value: LibraryDestination.routines) {
-                Label("All Routines", systemImage: "square.stack.3d.up")
+                LibrarySummaryRow(
+                    title: "All Routines",
+                    subtitle: model.savedTemplates.count == 1
+                        ? "1 reusable routine" : "\(model.savedTemplates.count) reusable routines"
+                )
             }
 
             NavigationLink(value: LibraryDestination.usualWeek) {
-                Label("Usual Week", systemImage: "calendar")
+                LibrarySummaryRow(title: "Usual Week", subtitle: usualWeekSummary)
             }
         }
     }
@@ -185,16 +183,11 @@ private struct LibraryContent: View {
     private var toolsSection: some View {
         Section("Planner & Files") {
             NavigationLink(value: LibraryDestination.planner) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label("Planner", systemImage: "sparkles")
-                    Text(plannerStatusText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                LibrarySummaryRow(title: "Planner", subtitle: plannerStatusText)
             }
             .accessibilityIdentifier("library-planner")
             NavigationLink(value: LibraryDestination.routineFiles) {
-                Label("Routine Files", systemImage: "arrow.up.arrow.down")
+                LibrarySummaryRow(title: "Routine Files", subtitle: "Import and export definitions")
             }
         }
     }
@@ -207,37 +200,45 @@ private struct LibraryContent: View {
         case .needsAttention: "Needs Attention"
         }
     }
+
+    private var usualWeekSummary: String {
+        let count = Set(model.savedTemplates.flatMap(\.assignedWeekdays)).count
+        switch count {
+        case 0: return "No default routines"
+        case 7: return "Configured · Mon–Sun"
+        default: return "Configured · \(count) of 7 days"
+        }
+    }
 }
 
-private struct LibraryRoutineRow: View {
-    let routine: TemplateCandidateSummary
+private struct LibrarySummaryRow: View {
+    let title: String
     let subtitle: String
-    let showsSelection: Bool
+    var status: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "square.stack.3d.up")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 26)
-
             VStack(alignment: .leading, spacing: 3) {
-                Text(routine.title)
+                Text(title)
                     .font(.body)
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
 
-            if showsSelection {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.tint)
-                    .accessibilityLabel("Selected for today")
+            if let status {
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(status == "READY" ? Color.orange : Color.secondary)
+                    .fixedSize()
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue([subtitle, status].compactMap { $0 }.joined(separator: ", "))
     }
 }
 

@@ -1,5 +1,38 @@
 #if DEBUG
 import Foundation
+import SwiftUI
+
+/// A bounded content preview, not an emulation of a different device or its sheets.
+struct SamoyedQAViewport<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var measuredWidth: CGFloat = 0
+
+    private var requestedWidth: CGFloat? {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SAMOYED_UI_TEST_FIXTURE"] != nil,
+              let value = environment["SAMOYED_QA_CONTENT_WIDTH"].flatMap(Double.init),
+              (280 ... 500).contains(value) else { return nil }
+        return CGFloat(value)
+    }
+
+    var body: some View {
+        if let requestedWidth {
+            content()
+                .frame(width: requestedWidth)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { measuredWidth = $0 }
+                .overlay(alignment: .bottomTrailing) {
+                    Text("QA content \(Int(measuredWidth)) pt")
+                        .font(.system(size: 10))
+                        .padding(2)
+                        .background(.regularMaterial)
+                        .accessibilityIdentifier("qa-content-width")
+                }
+                .frame(maxWidth: .infinity)
+        } else {
+            content()
+        }
+    }
+}
 
 @MainActor
 enum SamoyedUITestSupport {

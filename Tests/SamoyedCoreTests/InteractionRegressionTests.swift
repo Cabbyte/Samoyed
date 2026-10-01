@@ -158,6 +158,117 @@ final class InteractionRegressionTests: XCTestCase {
         XCTAssertEqual(positions, positions.sorted())
     }
 
+    func testLongTitleSpaceExpandsTheSharedAxisWithoutMovingUnrelatedIntervals() {
+        let scale = TimelineElasticTimeScale(
+            blocks: [],
+            openSlots: [TodayOpenSlotItem(id: UUID(), startMinuteOfDay: 780, endMinuteOfDay: 840)],
+            currentMinute: nil,
+            readableIntervals: [.init(startMinute: 795, endMinute: 825, minimumHeight: 96)],
+            topInset: 0,
+            bottomInset: 0
+        )
+
+        XCTAssertEqual(scale.distance(from: 795, to: 825), 96, accuracy: 0.001)
+        XCTAssertEqual(scale.distance(from: 795, to: 810), 48, accuracy: 0.001)
+        XCTAssertEqual(scale.distance(from: 780, to: 795), 14, accuracy: 0.001)
+        XCTAssertEqual(scale.distance(from: 825, to: 840), 14, accuracy: 0.001)
+        XCTAssertEqual(scale.hourHeight(for: 13), 124, accuracy: 0.001)
+        XCTAssertEqual(scale.distance(from: 720, to: 780), 56, accuracy: 0.001)
+        XCTAssertEqual(scale.distance(from: 840, to: 900), 56, accuracy: 0.001)
+        // A current-time line inside the card uses the same interpolation as its boundaries.
+        XCTAssertEqual(scale.yPosition(for: 810),
+                       (scale.yPosition(for: 795) + scale.yPosition(for: 825)) / 2,
+                       accuracy: 0.001)
+    }
+
+    func testNestedReadingConstraintsPreserveEveryMinimumAndChronologicalOrder() {
+        let intervals: [TimelineElasticTimeScale.ReadableInterval] = [
+            .init(startMinute: 780, endMinute: 840, minimumHeight: 240),
+            .init(startMinute: 780, endMinute: 795, minimumHeight: 88),
+            .init(startMinute: 795, endMinute: 825, minimumHeight: 96),
+            .init(startMinute: 810, endMinute: 840, minimumHeight: 120)
+        ]
+        let scale = TimelineElasticTimeScale(
+            blocks: [],
+            openSlots: [TodayOpenSlotItem(id: UUID(), startMinuteOfDay: 780, endMinuteOfDay: 840)],
+            currentMinute: 816,
+            readableIntervals: intervals
+        )
+
+        for interval in intervals {
+            XCTAssertGreaterThanOrEqual(
+                scale.distance(from: interval.startMinute, to: interval.endMinute) + 0.001,
+                interval.minimumHeight
+            )
+        }
+        for minute in 720 ..< 900 {
+            XCTAssertLessThan(scale.yPosition(for: minute), scale.yPosition(for: minute + 1))
+        }
+        XCTAssertEqual(scale.distance(from: 780, to: 840),
+                       scale.distance(from: 780, to: 795) + scale.distance(from: 795, to: 825)
+                        + scale.distance(from: 825, to: 840), accuracy: 0.001)
+    }
+
+    func testEveryParentHeaderHasSpaceOutsideAndInsideTheCurrentHour() {
+        let parentID = UUID()
+        let childID = UUID()
+        let blocks = [readingBlock(id: parentID, start: 780, end: 1080),
+                      readingBlock(id: childID, parentID: parentID, start: 795, end: 945)]
+        let intervals = TimelineReadability.intervals(blocks: blocks, openSlots: [], headerHeights: [:])
+        for minute: Int? in [nil, 750, 780, 794, 795, 816, 840, 900] {
+            let scale = TimelineElasticTimeScale(blocks: blocks, openSlots: [], currentMinute: minute,
+                                                 readableIntervals: intervals)
+            XCTAssertGreaterThanOrEqual(scale.distance(from: 780, to: 795), 68 - 0.001)
+            if minute == nil || minute == 750 {
+                XCTAssertEqual(scale.hourHeight(for: 13), 110, accuracy: 0.001)
+            }
+            if minute == 816 {
+                XCTAssertEqual(scale.distance(from: 780, to: 795), 68, accuracy: 0.001)
+                XCTAssertEqual(scale.distance(from: 795, to: 816), 82, accuracy: 0.001)
+                XCTAssertEqual(scale.distance(from: 816, to: 840), 56, accuracy: 0.001)
+            }
+        }
+    }
+
+    func testShortCardsAndLongParentHeadersExpandBoundariesTogether() {
+        let parentID = UUID()
+        let firstID = UUID()
+        let secondID = UUID()
+        let blocks = [readingBlock(id: parentID, start: 780, end: 840),
+                      readingBlock(id: firstID, parentID: parentID, start: 795, end: 800),
+                      readingBlock(id: secondID, parentID: parentID, start: 800, end: 805)]
+        let slots = [TodayOpenSlotItem(id: UUID(), startMinuteOfDay: 840, endMinuteOfDay: 845)]
+        let intervals = TimelineReadability.intervals(
+            blocks: blocks, openSlots: slots, headerHeights: [parentID: 96, firstID: 96]
+        )
+        let scale = TimelineElasticTimeScale(blocks: blocks, openSlots: slots, currentMinute: nil,
+                                             readableIntervals: intervals)
+        XCTAssertGreaterThanOrEqual(scale.distance(from: 780, to: 795), 96 - 0.001)
+        XCTAssertGreaterThanOrEqual(scale.distance(from: 795, to: 800), 96 - 0.001)
+        XCTAssertGreaterThanOrEqual(scale.distance(from: 800, to: 805), 68 - 0.001)
+        XCTAssertGreaterThanOrEqual(scale.distance(from: 840, to: 845), 44 - 0.001)
+        for minute in 780 ..< 845 {
+            XCTAssertLessThan(scale.yPosition(for: minute), scale.yPosition(for: minute + 1))
+        }
+        XCTAssertEqual(scale.yPosition(for: 795) + scale.distance(from: 795, to: 800),
+                       scale.yPosition(for: 800), accuracy: 0.001)
+    }
+
+    func testCoincidentParentAndChildUseAgendaWithoutChangingTheirTimes() {
+        let parentID = UUID()
+        let blocks = [readingBlock(id: parentID, start: 780, end: 840),
+                      readingBlock(id: UUID(), parentID: parentID, start: 780, end: 810)]
+        XCTAssertTrue(TimelineReadability.requiresAgenda(blocks: blocks))
+        XCTAssertFalse(TimelineReadability.requiresAgenda(blocks: [blocks[0]]))
+        XCTAssertEqual(blocks.map(\.startMinuteOfDay), [780, 780])
+    }
+
+    private func readingBlock(id: UUID, parentID: UUID? = nil, start: Int, end: Int) -> TimelineBlockItem {
+        TimelineBlockItem(id: id, parentBlockID: parentID, title: "Reading", note: nil,
+                          startMinuteOfDay: start, endMinuteOfDay: end,
+                          layerIndex: parentID == nil ? 0 : 1, isBlank: false, incompleteTaskCount: 0)
+    }
+
     func testLiveActivityRequiresAuthorizationAndAnActiveNonblankBlock() {
         let day = LocalDay(year: 2026, month: 8, day: 12)
         let activeBlock = SamoyedSystemBlockReference(

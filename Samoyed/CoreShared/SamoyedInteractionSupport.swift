@@ -76,7 +76,57 @@ enum NowChecklistDisplayBuilder {
     }
 }
 
+enum TimelineReadability {
+    static func requiresAgenda(blocks: [TimelineBlockItem]) -> Bool {
+        let byID = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0) })
+        return blocks.contains { block in
+            guard let parentID = block.parentBlockID, let parent = byID[parentID] else { return false }
+            return block.startMinuteOfDay == parent.startMinuteOfDay
+        }
+    }
+
+    static func intervals(
+        blocks: [TimelineBlockItem],
+        openSlots: [TodayOpenSlotItem],
+        headerHeights: [UUID: Double],
+        openSlotHeight: Double = 44
+    ) -> [TimelineElasticTimeScale.ReadableInterval] {
+        let children = Dictionary(grouping: blocks.compactMap { block -> TimelineBlockItem? in
+            block.parentBlockID == nil ? nil : block
+        }, by: { $0.parentBlockID! })
+        var intervals = blocks.flatMap { block -> [TimelineElasticTimeScale.ReadableInterval] in
+            let height = max(44, headerHeights[block.id] ?? 68)
+            var result = [TimelineElasticTimeScale.ReadableInterval(
+                startMinute: block.startMinuteOfDay,
+                endMinute: block.endMinuteOfDay,
+                minimumHeight: height
+            )]
+            if let firstChildStart = children[block.id]?.map(\.startMinuteOfDay).min(),
+               firstChildStart > block.startMinuteOfDay {
+                result.append(.init(
+                    startMinute: block.startMinuteOfDay,
+                    endMinute: firstChildStart,
+                    minimumHeight: height
+                ))
+            }
+            return result
+        }
+        intervals += openSlots.map {
+            .init(startMinute: $0.startMinuteOfDay, endMinute: $0.endMinuteOfDay,
+                  minimumHeight: max(44, openSlotHeight))
+        }
+        return intervals
+    }
+}
+
 struct TimelineElasticTimeScale: Equatable, Sendable {
+    /// Extra reading space belongs to the shared axis, never to an individual card offset.
+    struct ReadableInterval: Equatable, Sendable {
+        let startMinute: Int
+        let endMinute: Int
+        let minimumHeight: Double
+    }
+
     struct Segment: Equatable, Sendable {
         let startMinute: Int
         let endMinute: Int
@@ -99,6 +149,7 @@ struct TimelineElasticTimeScale: Equatable, Sendable {
         blocks: [TimelineBlockItem],
         openSlots: [TodayOpenSlotItem],
         currentMinute: Int?,
+        readableIntervals: [ReadableInterval] = [],
         topInset: Double = 20,
         bottomInset: Double = 18
     ) {
@@ -139,7 +190,50 @@ struct TimelineElasticTimeScale: Equatable, Sendable {
                 )
             }
         }
-        segments = builtSegments
+        segments = Self.expanding(readableIntervals, in: builtSegments)
+    }
+
+    private static func expanding(_ intervals: [ReadableInterval], in segments: [Segment]) -> [Segment] {
+        var result = segments
+        let validIntervals = intervals.filter {
+            $0.startMinute < $0.endMinute && $0.minimumHeight.isFinite && $0.minimumHeight > 0
+        }.sorted {
+            let lhsDuration = $0.endMinute - $0.startMinute
+            let rhsDuration = $1.endMinute - $1.startMinute
+            return lhsDuration == rhsDuration ? $0.startMinute < $1.startMinute : lhsDuration < rhsDuration
+        }
+
+        for interval in validIntervals {
+            result = result.flatMap { segment -> [Segment] in
+                let cuts = [interval.startMinute, interval.endMinute]
+                    .filter { $0 > segment.startMinute && $0 < segment.endMinute }
+                let anchors = [segment.startMinute] + cuts + [segment.endMinute]
+                return zip(anchors, anchors.dropFirst()).map { start, end in
+                    Segment(
+                        startMinute: start,
+                        endMinute: end,
+                        height: segment.height * Double(end - start)
+                            / Double(segment.endMinute - segment.startMinute)
+                    )
+                }
+            }
+            let height = result.filter {
+                $0.startMinute >= interval.startMinute && $0.endMinute <= interval.endMinute
+            }.reduce(0) { $0 + $1.height }
+            guard height > 0, height < interval.minimumHeight else { continue }
+
+            let factor = interval.minimumHeight / height
+            result = result.map { segment in
+                guard segment.startMinute >= interval.startMinute,
+                      segment.endMinute <= interval.endMinute else { return segment }
+                return Segment(
+                    startMinute: segment.startMinute,
+                    endMinute: segment.endMinute,
+                    height: segment.height * factor
+                )
+            }
+        }
+        return result
     }
 
     var hours: [Int] {

@@ -11,6 +11,7 @@ struct FeedbackSheetContext: Identifiable {
 
 struct FeedbackSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let context: FeedbackSheetContext
     let save: (FeedbackSentiment?, String) throws -> FeedbackEvent
@@ -31,23 +32,11 @@ struct FeedbackSheet: View {
                     editor
                 }
             }
-            .navigationTitle(savedEvent == nil ? "Give Feedback" : savedTitle)
+            .navigationTitle(savedEvent == nil ? "How did this feel?" : savedTitle)
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
-                if savedEvent == nil {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            dismiss()
-                        }
-                    }
-
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(isSaving ? "Saving…" : "Save", action: submit)
-                            .disabled(!canSave || isSaving)
-                            .accessibilityIdentifier("feedback-save")
-                    }
-                } else {
+                if savedEvent != nil {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
                             dismiss()
@@ -56,7 +45,28 @@ struct FeedbackSheet: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if savedEvent == nil {
+                    VStack(spacing: 8) {
+                        Button(action: submit) {
+                            Text(isSaving ? "Saving…" : "Save Feedback")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canSave || isSaving)
+                        .accessibilityIdentifier("feedback-save")
+
+                        Button("Cancel") { dismiss() }
+                            .frame(minHeight: 44)
+                            .disabled(isSaving)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial)
+                }
+            }
         }
+        .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isSaving)
     }
 
@@ -65,15 +75,22 @@ struct FeedbackSheet: View {
         targetSection
 
         Section("Quick Feedback") {
-            ForEach(FeedbackSentiment.allCases, id: \.self) { sentiment in
-                FeedbackSentimentRow(
-                    sentiment: sentiment,
-                    isSelected: selectedSentiment == sentiment
-                ) {
-                    selectedSentiment = selectedSentiment == sentiment ? nil : sentiment
-                    validationMessage = nil
+            LazyVGrid(columns: Array(
+                repeating: GridItem(.flexible(), spacing: 8),
+                count: dynamicTypeSize.isAccessibilitySize ? 1 : 2
+            ), spacing: 8) {
+                ForEach(FeedbackSentiment.allCases, id: \.self) { sentiment in
+                    FeedbackSentimentRow(
+                        sentiment: sentiment,
+                        isSelected: selectedSentiment == sentiment
+                    ) {
+                        selectedSentiment = selectedSentiment == sentiment ? nil : sentiment
+                        validationMessage = nil
+                    }
                 }
             }
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowBackground(Color.clear)
         }
 
         Section {
@@ -84,7 +101,7 @@ struct FeedbackSheet: View {
                     validationMessage = nil
                 }
         } header: {
-            Text("Note")
+            Text("Note (Optional)")
         } footer: {
             Text("Feedback is saved separately. It never edits today’s plan or the source routine.")
         }
@@ -205,13 +222,14 @@ private struct FeedbackSentimentRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Image(systemName: sentiment.systemImage)
-                    .frame(width: 24)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
 
                 Text(sentiment.displayTitle)
+                    .font(.subheadline)
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 8)
 
@@ -223,6 +241,12 @@ private struct FeedbackSentimentRow: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(isSelected ? Color.accentColor.opacity(0.12) : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(isSelected ? Color.accentColor : Color.clear)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -235,7 +259,7 @@ private struct FeedbackSentimentRow: View {
 private extension FeedbackSentiment {
     var displayTitle: String {
         switch self {
-        case .good: "Felt Good"
+        case .good: "Good"
         case .tooRushed: "Too Rushed"
         case .tooLoose: "Too Loose"
         case .tired: "Tired"

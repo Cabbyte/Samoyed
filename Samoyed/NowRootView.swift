@@ -187,7 +187,7 @@ private struct NowContentView: View {
                 .padding(.horizontal, 20)
             } else {
                 LazyVStack(alignment: .leading, spacing: 26) {
-                    NowCurrentSection(model: model)
+                    NowCurrentSection(model: model, onFeedback: onFeedback)
 
                     if !model.noteSections.isEmpty {
                         NowNotesSection(sections: model.noteSections)
@@ -198,7 +198,6 @@ private struct NowContentView: View {
                         filter: taskFilter,
                         statusMessage: model.statusMessage,
                         focusState: model.focusState,
-                        onFeedback: onFeedback,
                         onToggle: onToggleTask
                     )
                 }
@@ -213,12 +212,27 @@ private struct NowContentView: View {
 
 private struct NowCurrentSection: View {
     let model: NowScreenModel
+    let onFeedback: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("CURRENT")
-                .font(.caption.weight(.semibold))
+            HStack {
+                Text("CURRENT")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 12)
+
+                Button(action: onFeedback) {
+                    Label("Feedback", systemImage: "bubble.left")
+                        .font(.subheadline)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(.tint)
+                .accessibilityIdentifier("now-feedback")
+            }
 
             NowBlockStack(
                 items: Array(model.activeChain.prefix(3)),
@@ -456,7 +470,6 @@ private struct NowTasksSection: View {
     let filter: NowTaskFilter
     let statusMessage: String?
     let focusState: NowFocusState
-    let onFeedback: () -> Void
     let onToggle: (UUID, UUID) -> Void
 
     private var allTasks: [NowChecklistDisplayItem] {
@@ -497,14 +510,6 @@ private struct NowTasksSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Button(action: onFeedback) {
-                Label("Give Feedback", systemImage: "bubble.left")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("now-feedback")
 
             if visibleTasks.isEmpty {
                 ContentUnavailableView(

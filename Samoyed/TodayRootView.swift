@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TodayRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -13,7 +14,8 @@ struct TodayRootView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            TimelineView(.everyMinute) { context in
+                let referenceDate = SamoyedSimulationClock.adjusted(context.date)
                 if !store.isLoaded {
                     ScreenLoadingView(
                         title: "Loading Today",
@@ -30,10 +32,10 @@ struct TodayRootView: View {
                         retry: store.reload
                     ) {
                         try store.todayScreenModel(
-                            currentDate: SamoyedSimulationClock.adjusted(.now)
+                            currentDate: referenceDate
                         )
                     } content: { model in
-                        timelineContent(model: model)
+                        timelineContent(model: model, referenceDate: referenceDate)
                     }
                 }
             }
@@ -58,8 +60,7 @@ struct TodayRootView: View {
         }
     }
 
-    private func timelineContent(model: TodayScreenModel) -> some View {
-        let referenceDate = SamoyedSimulationClock.adjusted(.now)
+    private func timelineContent(model: TodayScreenModel, referenceDate: Date) -> some View {
         let currentMinute = store.currentMinuteOnSelectedDate(currentDate: referenceDate)
         let currentRoutine = try? store.todayTemplateChooserModel(for: model.date).currentSelection
 
@@ -97,11 +98,6 @@ struct TodayRootView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            TodayRoutineChooserButton(title: currentRoutine?.title) {
-                isShowingRoutineChooser = true
-            }
-        }
         .sheet(isPresented: $isShowingRoutineChooser) {
             NavigationStack {
                 TodayTemplateChooserView(date: model.date) {
@@ -119,6 +115,12 @@ struct TodayRootView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                TodayRoutineChooserButton(dateTitle: model.date.titleText, title: currentRoutine?.title) {
+                    isShowingRoutineChooser = true
+                }
+            }
+
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     preserveTimelinePosition(model: model, currentMinute: currentMinute)
@@ -326,11 +328,16 @@ private enum TodaySelection: Identifiable, Equatable {
 private struct TodayTimelineScale {
     private let mapping: TimelineElasticTimeScale
 
-    init(model: TodayScreenModel, currentMinute: Int?) {
+    init(
+        model: TodayScreenModel,
+        currentMinute: Int?,
+        readableIntervals: [TimelineElasticTimeScale.ReadableInterval] = []
+    ) {
         mapping = TimelineElasticTimeScale(
             blocks: model.blocks,
             openSlots: model.openSlots,
-            currentMinute: currentMinute
+            currentMinute: currentMinute,
+            readableIntervals: readableIntervals
         )
     }
 
@@ -394,17 +401,52 @@ private struct TodayTimelineView: View {
     let onClearSelection: () -> Void
 
     @State private var lastInitialScrollDate: LocalDay?
+    @State private var timelineWidth: CGFloat = 0
+    @ScaledMetric(relativeTo: .headline) private var headlinePointSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .footnote) private var footnotePointSize: CGFloat = 13
 
     private let labelWidth: CGFloat = 52
     private let trackLeadingInset: CGFloat = 12
     private let trackTrailingInset: CGFloat = 22
 
     private var scale: TodayTimelineScale {
-        TodayTimelineScale(model: model, currentMinute: currentMinute)
+        TodayTimelineScale(
+            model: model,
+            currentMinute: currentMinute,
+            readableIntervals: readableIntervals
+        )
+    }
+
+    private var readableIntervals: [TimelineElasticTimeScale.ReadableInterval] {
+        guard timelineWidth > 0 else { return [] }
+        let titleFont = UIFont.systemFont(ofSize: headlinePointSize, weight: .semibold)
+        let timeFont = UIFont.systemFont(ofSize: footnotePointSize)
+        let heights = model.blocks.map { block -> (UUID, Double) in
+            var width = timelineWidth - labelWidth - trackLeadingInset - trackTrailingInset
+            for _ in 0 ..< block.layerIndex {
+                width -= min(16, max(8, width * 0.12)) + min(8, max(4, width * 0.06))
+            }
+            let titleHeight = (block.title as NSString).boundingRect(
+                with: CGSize(width: max(1, width - 24), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: titleFont],
+                context: nil
+            ).height
+            let lines: CGFloat = titleHeight > titleFont.lineHeight + 1 ? 2 : 1
+            return (block.id, Double(max(lines == 1 ? 68 : 96,
+                ceil(titleFont.lineHeight * lines + timeFont.lineHeight + 26))))
+        }
+        return TimelineReadability.intervals(
+            blocks: model.blocks,
+            openSlots: model.openSlots,
+            headerHeights: Dictionary(uniqueKeysWithValues: heights),
+            openSlotHeight: Double(ceil(titleFont.lineHeight + timeFont.lineHeight + 26))
+        )
     }
 
     var body: some View {
-        if voiceOverEnabled || dynamicTypeSize.isAccessibilitySize {
+        if voiceOverEnabled || dynamicTypeSize.isAccessibilitySize
+            || TimelineReadability.requiresAgenda(blocks: model.blocks) {
             TodayAgendaFallback(
                 model: model,
                 currentMinute: currentMinute,
@@ -448,8 +490,13 @@ private struct TodayTimelineView: View {
                 .frame(height: canvasHeight)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .task(id: model.date) {
-                guard lastInitialScrollDate != model.date else { return }
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.width
+            } action: { width in
+                timelineWidth = width
+            }
+            .task(id: timelineWidth > 0 ? model.date : nil) {
+                guard timelineWidth > 0, lastInitialScrollDate != model.date else { return }
                 lastInitialScrollDate = model.date
 
                 if let dateNavigationScrollMinute {
@@ -793,7 +840,6 @@ private struct TimelineBlockCard: View {
     let timingResolver: (UUID) -> TimeBlockTiming?
     let onSelect: (UUID) -> Void
 
-    private let minimumHeight: CGFloat = 44
     private let childLeadingInset: CGFloat = 16
     private let childTrailingInset: CGFloat = 8
 
@@ -828,7 +874,7 @@ private struct TimelineBlockCard: View {
     }
 
     private var outerFrameHeight: CGFloat {
-        max(durationHeight, minimumHeight)
+        durationHeight
     }
 
     private var cardHeight: CGFloat {
@@ -848,12 +894,15 @@ private struct TimelineBlockCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(block.title)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("timeline-title-\(block.id.uuidString)")
 
                 Text(timeRangeText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .accessibilityIdentifier("timeline-time-\(block.id.uuidString)")
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1075,7 +1124,7 @@ private struct TimelineOpenSlotEntry: View {
                     : Color(uiColor: .systemGroupedBackground)
             )
             .overlay(slotBorder)
-            .frame(height: max(slotHeight, 44))
+            .frame(height: slotHeight)
             .overlay(alignment: .topLeading) { slotLabel }
             .contentShape(slotShape)
             .onTapGesture(perform: onSelect)
@@ -1127,7 +1176,7 @@ private struct TodayBlockInspectorView: View {
 
     var body: some View {
         Form {
-            Section("Summary") {
+            Section {
                 header
             }
 
@@ -1212,8 +1261,10 @@ private struct TodayBlockInspectorView: View {
                 .accessibilityIdentifier("block-details-feedback")
             }
         }
-        .navigationTitle(currentDetail.title)
+        .navigationTitle("Block Details")
         .navigationBarTitleDisplayMode(.inline)
+        .presentationDetents([.fraction(0.68), .large])
+        .presentationDragIndicator(.visible)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") {
@@ -1276,6 +1327,7 @@ private struct TodayBlockInspectorView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Parent block, \(currentDetail.parentBlockTitle ?? "")")

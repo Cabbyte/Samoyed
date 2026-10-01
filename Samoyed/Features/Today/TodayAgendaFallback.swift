@@ -45,7 +45,7 @@ struct TodayAgendaFallback: View {
             } header: {
                 Text("Timeline")
             } footer: {
-                Text("Shown as an agenda at larger text sizes so every title and time remains readable.")
+                Text("Shown as an agenda so every title and time remains readable.")
             }
         }
         .listStyle(.insetGrouped)
@@ -100,22 +100,33 @@ private enum TodayAgendaEntry: Identifiable {
 
 private struct TodayAgendaRow: View {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let entry: TodayAgendaEntry
     let isCurrent: Bool
     let isSelected: Bool
 
+    private var titleLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
+                .resizable()
+                .scaledToFit()
                 .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary)
                 .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                titleLayout {
                     Text(title)
                         .font(.headline)
                         .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     if isCurrent {
                         Text("NOW")

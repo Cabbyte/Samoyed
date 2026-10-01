@@ -89,6 +89,44 @@ enum SamoyedQAFixtureFactory {
         case "elastic-timeline":
             return elasticTimelineDocument(today: today)
 
+        case "coincident-starts":
+            var document = frozenRuntimeDocument(today: today)
+            for planIndex in document.dayPlans.indices {
+                for blockIndex in document.dayPlans[planIndex].blocks.indices
+                where document.dayPlans[planIndex].blocks[blockIndex].layerIndex == 1 {
+                    document.dayPlans[planIndex].blocks[blockIndex].timing = .relative(
+                        startOffsetMinutes: 0, requestedDurationMinutes: 150
+                    )
+                }
+                document.dayPlans[planIndex] = resolved(document.dayPlans[planIndex])
+            }
+            for routineIndex in document.savedTemplates.indices {
+                for blockIndex in document.savedTemplates[routineIndex].blocks.indices
+                where document.savedTemplates[routineIndex].blocks[blockIndex].layerIndex == 1 {
+                    document.savedTemplates[routineIndex].blocks[blockIndex].timing = .relative(
+                        startOffsetMinutes: 0, requestedDurationMinutes: 150
+                    )
+                }
+            }
+            return document
+
+        case "long-title":
+            var document = frozenRuntimeDocument(today: today)
+            let title = "Project work and thoughtful planning"
+            for planIndex in document.dayPlans.indices {
+                for blockIndex in document.dayPlans[planIndex].blocks.indices
+                where document.dayPlans[planIndex].blocks[blockIndex].layerIndex == 1 {
+                    document.dayPlans[planIndex].blocks[blockIndex].title = title
+                }
+            }
+            for routineIndex in document.savedTemplates.indices {
+                for blockIndex in document.savedTemplates[routineIndex].blocks.indices
+                where document.savedTemplates[routineIndex].blocks[blockIndex].layerIndex == 1 {
+                    document.savedTemplates[routineIndex].blocks[blockIndex].title = title
+                }
+            }
+            return document
+
         default:
             return nil
         }

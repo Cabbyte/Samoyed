@@ -19,7 +19,13 @@ struct SamoyedApp: App {
         // `WindowGroup` 代表应用的主窗口集合。
         // 在 iPhone 上通常可以粗略理解为“主界面容器”。
         WindowGroup {
+            #if DEBUG
+            SamoyedQAViewport {
+                ContentView()
+            }
+            #else
             ContentView()
+            #endif
         }
     }
 }

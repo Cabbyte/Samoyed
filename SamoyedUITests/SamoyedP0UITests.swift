@@ -62,12 +62,14 @@ final class SamoyedP0UITests: XCTestCase {
 
         let feedback = app.buttons[ID.nowFeedback]
         XCTAssertTrue(feedback.waitForExistence(timeout: 5))
+        attachScreenshot("375 Now - feedback-validation - 13-36")
         feedback.tap()
 
-        XCTAssertTrue(app.navigationBars["Give Feedback"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["How did this feel?"].waitForExistence(timeout: 3))
         let save = app.buttons[ID.feedbackSave]
         XCTAssertTrue(save.exists)
         XCTAssertFalse(save.isEnabled, "Empty feedback must not be saved.")
+        attachScreenshot("375 Feedback empty - 13-36")
 
         app.buttons[ID.feedbackGood].tap()
         XCTAssertTrue(waitUntilEnabled(save))
@@ -80,6 +82,7 @@ final class SamoyedP0UITests: XCTestCase {
             ].exists
         )
         XCTAssertTrue(app.buttons[ID.feedbackDone].exists)
+        attachScreenshot("375 Feedback local-only saved - 13-36")
     }
 
     func testNowChecklistUndoPersistsAcrossRelaunch() throws {
@@ -114,11 +117,42 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertTrue(waitUntilHittable(projectWork))
         projectWork.tap()
 
-        XCTAssertTrue(app.navigationBars["Project Work"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Checklist"].exists)
-        XCTAssertTrue(app.staticTexts["Reminders"].exists)
-        XCTAssertTrue(app.buttons[ID.blockFeedback].exists)
+        XCTAssertTrue(app.navigationBars["Block Details"].waitForExistence(timeout: 3))
+        attachScreenshot("375 Block Details initial - frozen-runtime - 13-36")
+        XCTAssertTrue(revealByScrolling(app.staticTexts["Checklist"]))
+        XCTAssertTrue(revealByScrolling(app.staticTexts["Reminders"]))
+        XCTAssertTrue(revealByScrolling(app.buttons[ID.blockFeedback]))
         XCTAssertTrue(app.buttons[ID.blockDone].exists)
+        attachScreenshot("375 Block Details feedback reachable - 13-36")
+        app.buttons[ID.blockDone].tap()
+        XCTAssertTrue(waitUntilHittable(projectWork))
+        projectWork.tap()
+        let parent = app.buttons["Parent block, Afternoon"]
+        XCTAssertTrue(parent.waitForExistence(timeout: 3))
+        parent.tap()
+        XCTAssertTrue(app.staticTexts["13:00 - 18:00"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Parent block, Afternoon"].exists)
+        attachScreenshot("375 Parent Block Details - 13-36")
+    }
+
+    func testTodayClockAdvancesWhileRemainingOnScreen() throws {
+        launch(fixture: .frozenRuntime, simulationMinute: nil)
+        openTab("Today")
+        let indicator = element(id: "today-current-time-indicator")
+        XCTAssertTrue(indicator.waitForExistence(timeout: 5))
+        let initialLabel = indicator.label
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "Today before minute boundary"
+        before.lifetime = .keepAlways
+        add(before)
+
+        XCTAssertTrue(wait(for: NSPredicate(format: "label != %@", initialLabel),
+                           element: indicator, timeout: 70))
+        XCTAssertTrue(app.buttons[ID.todayCurrentRoutine].exists)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "Today after minute boundary"
+        after.lifetime = .keepAlways
+        add(after)
     }
 
     func testTodayChooserCanChooseNoRoutineAndRestoreWorkday() throws {
@@ -135,6 +169,7 @@ final class SamoyedP0UITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["No Routine Selected"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForValue("No Routine", of: currentRoutine))
+        attachScreenshot("375 Today No Routine - 13-36")
 
         currentRoutine.tap()
         let select = app.buttons[ID.todayWorkdayRoutine]
@@ -151,10 +186,11 @@ final class SamoyedP0UITests: XCTestCase {
 
         let current = app.buttons[ID.libraryCurrentRoutine]
         XCTAssertTrue(current.waitForExistence(timeout: 5))
+        attachScreenshot("375 Library - frozen-runtime - 13-36")
         current.tap()
 
         XCTAssertTrue(app.navigationBars["Workday"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons[ID.routineSelectToday].exists)
+        XCTAssertTrue(revealByScrolling(app.buttons[ID.routineSelectToday]))
         XCTAssertFalse(app.buttons[ID.routineSelectToday].isEnabled)
         XCTAssertFalse(app.buttons["Edit"].exists)
 
@@ -166,8 +202,9 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertTrue(recovery.waitForExistence(timeout: 3))
         recovery.tap()
         XCTAssertTrue(app.navigationBars["Recovery Day"].waitForExistence(timeout: 3))
+        XCTAssertTrue(revealByScrolling(app.buttons[ID.routineSelectToday]))
         XCTAssertTrue(app.buttons[ID.routineSelectToday].isEnabled)
-        XCTAssertTrue(app.buttons[ID.routineAskPlanner].exists)
+        XCTAssertTrue(revealByScrolling(app.buttons[ID.routineAskPlanner]))
     }
 
     func testLibraryUsualWeekSupportsNoRoutineAssignment() throws {
@@ -214,23 +251,29 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertTrue(suggestions.waitForExistence(timeout: 5))
         suggestions.tap()
         XCTAssertTrue(element(id: ID.suggestionsInbox).waitForExistence(timeout: 3))
+        attachScreenshot("375 Suggestions inbox - suggestions-pending - 13-36")
 
         let daily = app.buttons[ID.dailySuggestion]
         XCTAssertTrue(daily.waitForExistence(timeout: 3))
         daily.tap()
         let accept = app.buttons[ID.suggestionAccept]
-        XCTAssertTrue(accept.waitForExistence(timeout: 3))
+        XCTAssertTrue(revealByScrolling(accept))
+        XCTAssertTrue(waitUntilHittable(accept))
+        attachScreenshot("375 Suggestion detail - pending - 13-36")
         accept.tap()
         XCTAssertTrue(app.staticTexts["Accepted"].waitForExistence(timeout: 3))
+        attachScreenshot("375 Suggestion accepted - 13-36")
 
         app.navigationBars.buttons["Suggestions"].tap()
         let improvement = app.buttons[ID.improvementSuggestion]
         XCTAssertTrue(improvement.waitForExistence(timeout: 3))
         improvement.tap()
         let reject = app.buttons[ID.suggestionReject]
-        XCTAssertTrue(reject.waitForExistence(timeout: 3))
+        XCTAssertTrue(revealByScrolling(reject))
+        XCTAssertTrue(waitUntilHittable(reject))
         reject.tap()
         XCTAssertTrue(app.staticTexts["Rejected"].waitForExistence(timeout: 3))
+        attachScreenshot("375 Suggestion rejected - 13-36")
     }
 
     func testPlannerLaunchFixturesCoverAllConnectionStates() throws {
@@ -293,12 +336,61 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertTrue(revealByScrolling(app.buttons[ID.activationStart]))
     }
 
+    func testNoncurrentParentAndChildHeaderFramesDoNotOverlap() throws {
+        for minute in [750, 816, 900] {
+            launch(fixture: .frozenRuntime, simulationMinute: minute)
+            openTab("Today")
+            let parentTime = app.staticTexts["timeline-time-40000000-0000-0000-0000-000000000002"]
+            let childTitle = app.staticTexts["timeline-title-40000000-0000-0000-0000-000000000003"]
+            XCTAssertTrue(parentTime.waitForExistence(timeout: 5))
+            XCTAssertTrue(childTitle.exists)
+            XCTAssertGreaterThan(parentTime.frame.height, 0)
+            XCTAssertGreaterThan(childTitle.frame.height, 0)
+            XCTAssertLessThanOrEqual(parentTime.frame.maxY, childTitle.frame.minY,
+                                     "Parent time and child title overlap at minute \(minute)")
+            attachScreenshot("Header spacing at minute \(minute)")
+        }
+    }
+
+    func testCoincidentStartsShowAgendaAndOpenDetails() throws {
+        launch(fixture: .coincidentStarts)
+        openTab("Today")
+        XCTAssertTrue(element(id: "today-accessibility-agenda").waitForExistence(timeout: 5))
+        let project = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Project Work")).firstMatch
+        XCTAssertTrue(revealByScrolling(project))
+        project.tap()
+        XCTAssertTrue(app.navigationBars["Block Details"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["13:00 - 15:30"].exists)
+    }
+
+    func testLongTitleFitsMeasured320PointContentPreview() throws {
+        launch(fixture: .longTitle, simulationMinute: 750, contentWidth: 320)
+        openTab("Today")
+        XCTAssertTrue(app.staticTexts["qa-content-width"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["qa-content-width"].label, "QA content 320 pt")
+        let title = app.staticTexts["timeline-title-40000000-0000-0000-0000-000000000003"]
+        let parentTime = app.staticTexts["timeline-time-40000000-0000-0000-0000-000000000002"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(title.frame.height, 30, "Long title should use two lines")
+        XCTAssertLessThanOrEqual(parentTime.frame.maxY, title.frame.minY)
+        XCTAssertLessThanOrEqual(title.frame.width, 210)
+        attachScreenshot("320 pt bounded content preview, not a 320 pt device")
+    }
+
+    private func attachScreenshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @discardableResult
     private func launch(
         fixture: Fixture,
         reset: Bool = true,
         route: String? = nil,
-        simulationMinute: Int = 816,
+        simulationMinute: Int? = 816,
+        contentWidth: Int? = nil,
         extraArguments: [String] = []
     ) -> XCUIApplication {
         if app?.state != .notRunning {
@@ -308,7 +400,8 @@ final class SamoyedP0UITests: XCTestCase {
         let application = XCUIApplication()
         application.launchEnvironment["SAMOYED_UI_TEST_FIXTURE"] = fixture.rawValue
         application.launchEnvironment["SAMOYED_UI_TEST_RESET"] = reset ? "1" : "0"
-        application.launchEnvironment["SAMOYED_SIMULATION_MINUTE"] = String(simulationMinute)
+        application.launchEnvironment["SAMOYED_SIMULATION_MINUTE"] = simulationMinute.map(String.init) ?? ""
+        application.launchEnvironment["SAMOYED_QA_CONTENT_WIDTH"] = contentWidth.map(String.init) ?? ""
         if let route {
             application.launchEnvironment["SAMOYED_UI_TEST_ROUTE"] = route
         }
@@ -430,6 +523,8 @@ final class SamoyedP0UITests: XCTestCase {
 }
 
 private enum Fixture: String {
+    case coincidentStarts = "coincident-starts"
+    case longTitle = "long-title"
     case firstRun = "first-run"
     case frozenRuntime = "frozen-runtime"
     case feedbackValidation = "feedback-validation"

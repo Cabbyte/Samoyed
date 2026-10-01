@@ -8,7 +8,7 @@
 
 Samoyed 的界面目标是让用户稳定运行已经定义好的 routine，而不是在手机上临时规划或编辑一天。
 
-UI 应帮助用户完成四件事：
+UI 应帮助用户完成以下事情：
 
 - 导入并理解可运行的 Routine Definition。
 - 让 weekday default 自动运行，并允许为某一天选择另一个已批准 Routine 或 No Routine。
@@ -201,7 +201,8 @@ flowchart TD
 - 展开或收起详情面板。
 - 跳到当前 active block。
 - 勾选 checklist item，前提是该 checklist item 是执行状态的一部分。
-- 通过明确的 Today-only 入口修正既有 block 的标题、开始/结束时间和 note。
+- 通过日期下的 Routine 入口选择已有 Routine 或 No Routine。
+- 为当前 block 追加 Feedback；Feedback 不直接修改结构。
 
 ### Does Not Allow
 
@@ -284,7 +285,7 @@ Widgets、Live Activities、App Shortcuts 与 notifications 只服务运行和�
 - 使用动态字体。
 - 保持信息密度清晰，不做营销式 landing page。
 
-Today timeline 可以定制视觉，但必须保持查看优先、修正受限的心智：
+Today timeline 可以定制视觉，但必须保持结构只读的心智：
 
 - selected state 可以高亮。
 - open gap 可以显示，但不应使用加号暗示新增。
