@@ -14,6 +14,14 @@
 				<string>samoyed</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Samoyed Nest OAuth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>top.protium.samoyed</string>
+			</array>
+		</dict>
 	</array>
 	<key>SamoyedAppGroupIdentifier</key>
 	<string>$(SAMOYED_APP_GROUP_ID)</string>

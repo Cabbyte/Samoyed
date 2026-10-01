@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "samoyed-nest": {
+      "type": "streamable-http",
+      "url": "https://samoyed.protium.top/mcp"
+    }
+  }
+}

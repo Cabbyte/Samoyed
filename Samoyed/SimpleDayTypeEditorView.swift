@@ -11,6 +11,9 @@ struct ActivationRootView: View {
         NavigationStack {
             Form {
                 Section {
+                    NavigationLink { NestAccountView() } label: { Label("Connect Samoyed Nest", systemImage: "person.crop.circle") }
+                }
+                Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Image(systemName: "clock.badge.checkmark")
                             .font(.largeTitle)
@@ -31,6 +34,11 @@ struct ActivationRootView: View {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                     }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Skip for now") { store.continueWithoutRoutine() }
                 }
             }
             .navigationTitle("Set Up Samoyed")

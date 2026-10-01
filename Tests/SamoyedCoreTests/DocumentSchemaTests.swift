@@ -23,7 +23,21 @@ final class DocumentSchemaTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         XCTAssertEqual(
             Set(object.keys),
-            ["dayPlans", "savedTemplates", "weekdayRules", "overrides", "daySelections"]
+            ["dayPlans", "savedTemplates", "weekdayRules", "overrides", "daySelections", "timelineNotes"]
         )
+    }
+}
+
+extension DocumentSchemaTests {
+    func testRoutineGuidanceAcceptsNewNameAndRetainsLegacyFileEncoding() throws {
+        let block = BlockTemplate(layerIndex: 0, title: "Morning", note: "Old guidance", timing: .absolute(startMinuteOfDay: 540, requestedEndMinuteOfDay: 600))
+        let original = try JSONEncoder().encode(block)
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        value["guidance"] = "Nest guidance"
+        let decoded = try JSONDecoder().decode(BlockTemplate.self, from: JSONSerialization.data(withJSONObject: value))
+        XCTAssertEqual(decoded.note, "Nest guidance")
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
+        XCTAssertEqual(encoded["note"] as? String, "Nest guidance")
+        XCTAssertNil(encoded["guidance"])
     }
 }

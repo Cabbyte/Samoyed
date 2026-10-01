@@ -1245,3 +1245,14 @@ P0 只继续实现或修正：
 - `BlankBaseBlock` 能正确补齐底层空档
 - `BlankBaseBlock` 不会进入候选模板
 - 已落库 `DayPlan` 不会被后续模板编辑自动改写
+
+## Samoyed Nest private beta
+
+Samoyed retains local mode and can connect to a shared Nest account for Routine planning,
+offline execution and timeline Notes. The current public origin is https://samoyed.protium.top.
+See [Nest architecture and development](nest/README.md),
+[verified deployment and acceptance status](docs/samoyed-nest-status.md), and
+[operations and backups](docs/samoyed-nest-operations.md).
+
+The old Sites deployment is a read-only archive. App Store and public plugin directory submissions
+are outside this private beta.

@@ -37,6 +37,13 @@ struct LibraryRootView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                if let conflicts = try? store.noteConflicts(), !conflicts.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink { NestNoteConflictsView() } label: {
+                            Label("Sync conflicts", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         RoutineEditorView(mode: .create)
@@ -66,6 +73,11 @@ private struct LibraryContent: View {
 
     var body: some View {
         List {
+            Section {
+                NavigationLink { NestAccountView() } label: {
+                    Label("Samoyed Nest · \(store.nest.status)", systemImage: "person.crop.circle")
+                }
+            }
             Section {
                 Text("Choose, preview, and reuse routines.")
                     .font(.title3)

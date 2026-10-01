@@ -4,6 +4,7 @@ import Foundation
 // 如果把 app 的可保存状态想成一棵树，这里就是根节点，最终会被编码成 JSON。
 // 一切“用户真正保存下来的东西”，都必须能从这里访问到。
 public struct SamoyedDocument: Equatable, Codable, Sendable {
+    public var timelineNotes: [TimelineNote]
     public var dayPlans: [DayPlan]
     public var savedTemplates: [SavedDayTemplate]
     public var weekdayRules: [WeekdayTemplateRule]
@@ -15,16 +16,19 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
         savedTemplates: [SavedDayTemplate] = [],
         weekdayRules: [WeekdayTemplateRule] = [],
         overrides: [DateTemplateOverride] = [],
-        daySelections: [DayTemplateSelection] = []
+        daySelections: [DayTemplateSelection] = [],
+        timelineNotes: [TimelineNote] = []
     ) {
         self.dayPlans = dayPlans
         self.savedTemplates = savedTemplates
         self.weekdayRules = weekdayRules
         self.overrides = overrides
         self.daySelections = daySelections
+        self.timelineNotes = timelineNotes
     }
 
     enum CodingKeys: String, CodingKey {
+        case timelineNotes
         case dayPlans
         case savedTemplates
         case weekdayRules
@@ -34,6 +38,7 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        timelineNotes = try container.decodeIfPresent([TimelineNote].self, forKey: .timelineNotes) ?? []
         dayPlans = try container.decodeIfPresent([DayPlan].self, forKey: .dayPlans) ?? []
         savedTemplates = try container.decodeIfPresent([SavedDayTemplate].self, forKey: .savedTemplates) ?? []
         weekdayRules = try container.decodeIfPresent([WeekdayTemplateRule].self, forKey: .weekdayRules) ?? []
@@ -43,6 +48,7 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(timelineNotes, forKey: .timelineNotes)
         try container.encode(dayPlans, forKey: .dayPlans)
         try container.encode(savedTemplates, forKey: .savedTemplates)
         try container.encode(weekdayRules, forKey: .weekdayRules)
@@ -53,6 +59,7 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
 
 public extension SamoyedDocument {
     var isEmptyForActivation: Bool {
+        timelineNotes.allSatisfy { $0.deletedAt != nil } &&
         dayPlans.isEmpty &&
         savedTemplates.isEmpty &&
         weekdayRules.isEmpty &&

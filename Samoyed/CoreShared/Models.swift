@@ -244,6 +244,7 @@ public enum TimeBlockKind: String, Equatable, Codable, Sendable {
 // `TaskItem` 是“某一天里的真实任务实例”。
 // 它和模板里的 blueprint 不同：这里可以记录完成状态、完成时间。
 public struct TaskItem: Identifiable, Equatable, Codable, Sendable {
+    public var sourceTaskID: UUID?
     public var id: UUID
     public var title: String
     public var order: Int
@@ -324,6 +325,7 @@ public enum TimeBlockTiming: Equatable, Codable, Sendable {
 // The resolved start/end values are caches produced by `DayPlanEngine`.
 // The persisted truth is still `timing`.
 public struct TimeBlock: Identifiable, Equatable, Codable, Sendable {
+    public var sourceBlockID: UUID?
     public var id: UUID
     public var dayPlanID: UUID?
     public var parentBlockID: UUID?
@@ -413,6 +415,11 @@ public struct BlockResizeBounds: Equatable, Sendable {
 // It stores authored blocks plus metadata about whether the day came from a template
 // and whether the user has diverged from that template.
 public struct DayPlan: Identifiable, Equatable, Codable, Sendable {
+    public var source: String?
+    public var sourceCursor: String?
+    public var sourceRevision: Int?
+    public var revision: Int?
+    public var timeZoneID: String?
     public var id: UUID
     public var date: LocalDay
     public var sourceSavedTemplateID: UUID?
@@ -457,6 +464,30 @@ public struct BlockTemplate: Identifiable, Equatable, Codable, Sendable {
     public var reminders: [ReminderRule]
     public var taskBlueprints: [TaskBlueprint]
     public var timing: TimeBlockTiming
+
+    private enum CodingKeys: String, CodingKey {
+        case id, parentTemplateBlockID, layerIndex, title, note, guidance, reminders, taskBlueprints, timing
+    }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        parentTemplateBlockID = try values.decodeIfPresent(UUID.self, forKey: .parentTemplateBlockID)
+        layerIndex = try values.decode(Int.self, forKey: .layerIndex)
+        title = try values.decode(String.self, forKey: .title)
+        note = try values.decodeIfPresent(String.self, forKey: .guidance) ?? values.decodeIfPresent(String.self, forKey: .note)
+        reminders = try values.decode([ReminderRule].self, forKey: .reminders)
+        taskBlueprints = try values.decode([TaskBlueprint].self, forKey: .taskBlueprints)
+        timing = try values.decode(TimeBlockTiming.self, forKey: .timing)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encodeIfPresent(parentTemplateBlockID, forKey: .parentTemplateBlockID)
+        try values.encode(layerIndex, forKey: .layerIndex); try values.encode(title, forKey: .title)
+        try values.encodeIfPresent(note, forKey: .note)
+        try values.encode(reminders, forKey: .reminders); try values.encode(taskBlueprints, forKey: .taskBlueprints)
+        try values.encode(timing, forKey: .timing)
+    }
 
     public init(
         id: UUID = UUID(),

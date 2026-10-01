@@ -13,6 +13,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  nest-tests:
+    name: Nest SQLite and D1 contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: nest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: nest/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:d1
+      - run: npm run build && npm run validate
+
   core-tests:
     name: Core tests
     runs-on: macos-26
@@ -93,3 +115,4 @@ jobs:
           schemes="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes' "$app_info" | awk '/^[[:space:]]+[[:alnum:]]/ { print $1 }')"
           test "$(wc -l <<< "$schemes" | tr -d ' ')" -eq 1
           test "$schemes" = "samoyed"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:1:CFBundleURLSchemes:0' "$app_info")" = "top.protium.samoyed"

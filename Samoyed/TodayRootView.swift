@@ -3,6 +3,7 @@ import SwiftUI
 struct TodayRootView: View {
     @Environment(SamoyedStore.self) private var store
 
+    @State private var noteDraft: TimelineNote?
     @State private var selection: TodaySelection?
     @State private var jumpToCurrentTrigger = 0
     @State private var scrollToBlockTrigger = 0
@@ -17,12 +18,6 @@ struct TodayRootView: View {
                         title: "Loading Today",
                         systemImage: "calendar",
                         description: "Preparing your timeline and current context."
-                    )
-                } else if store.requiresTemplateSelection(for: store.selectedDate) {
-                    RoutineSelectionRequiredView(
-                        date: store.selectedDate,
-                        title: "Choose a Routine",
-                        message: "Pick one routine before Today can show the materialized timeline."
                     )
                 } else {
                     RootScreenContainer(
@@ -41,6 +36,14 @@ struct TodayRootView: View {
                     }
                 }
             }
+            .toolbar {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Add Note", systemImage: "square.and.pencil") {
+                        noteDraft = TimelineNote(text: "", occurredAt: store.selectedDate.date(minuteOfDay: Date.now.minuteOfDay) ?? .now)
+                    }
+                }
+            }
+            .sheet(item: $noteDraft) { note in TimelineNoteEditor(note: note).environment(store) }
             .navigationTitle(store.selectedDate.titleText)
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -67,6 +70,8 @@ struct TodayRootView: View {
         let currentMinute = store.currentMinuteOnSelectedDate(currentDate: referenceDate)
         return TodayTimelineView(
             model: model,
+            notes: store.document.timelineNotes(on: model.date),
+            onSelectNote: { noteDraft = $0 },
             selectedBlockID: selection?.blockID,
             selectedOpenSlotID: selection?.openSlotID,
             currentMinute: currentMinute,
@@ -158,6 +163,14 @@ struct TodayRootView: View {
                         store.toggleTask(on: model.date, blockID: detail.id, taskID: taskID)
                     }
                 )
+                .toolbar {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("Add Note", systemImage: "square.and.pencil") {
+                            selection = nil
+                            noteDraft = TimelineNote(text: "", occurredAt: model.date.date(minuteOfDay: Date.now.minuteOfDay) ?? .now, blockInstanceID: detail.id)
+                        }
+                    }
+                }
             } else if let block = model.blocks.first(where: { $0.id == id }) {
                 TodayUnavailableInspectorView(
                     title: block.title,
@@ -347,6 +360,8 @@ private struct TodayTimelineView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let model: TodayScreenModel
+    let notes: [TimelineNote]
+    let onSelectNote: (TimelineNote) -> Void
     let selectedBlockID: UUID?
     let selectedOpenSlotID: UUID?
     let currentMinute: Int?
@@ -389,6 +404,23 @@ private struct TodayTimelineView: View {
 
                             ForEach(rootNodes) { node in
                                 timelineBlock(node, canvasWidth: geometry.size.width)
+                            }
+
+                            ForEach(notes) { note in
+                                Button { onSelectNote(note) } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Label(note.occurredAt.formatted(date: .omitted, time: .shortened), systemImage: "text.bubble")
+                                            .font(.caption2.bold())
+                                        Text(note.text).font(.caption2).lineLimit(2)
+                                    }
+                                    .padding(5)
+                                    .frame(width: 100, alignment: .leading)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Note, \(note.occurredAt.formatted(date: .omitted, time: .shortened)), \(note.text)")
+                                .offset(x: max(0, geometry.size.width - 106), y: scale.yPosition(for: note.occurredAt.minuteOfDay))
+                                .zIndex(110)
                             }
 
                             if let currentMinute {
@@ -536,7 +568,7 @@ private struct TodayTimelineView: View {
         let y = scale.yPosition(for: displayedStartMinuteOfDay)
         let blockWidth = max(
             0,
-            canvasWidth - labelWidth - trackLeadingInset - trackTrailingInset
+            canvasWidth - labelWidth - trackLeadingInset - trackTrailingInset - (notes.isEmpty ? 0 : 104)
         )
 
         return TimelineBlockCard(
@@ -558,7 +590,7 @@ private struct TodayTimelineView: View {
         let y = scale.yPosition(for: slot.startMinuteOfDay)
         let trackWidth = max(
             0,
-            canvasWidth - labelWidth - trackLeadingInset - trackTrailingInset
+            canvasWidth - labelWidth - trackLeadingInset - trackTrailingInset - (notes.isEmpty ? 0 : 104)
         )
 
         return TimelineOpenSlotEntry(
@@ -1429,6 +1461,8 @@ private struct TodayUnavailableInspectorView: View {
     let model = PreviewSupport.todayModel()
     TodayTimelineView(
         model: model,
+        notes: [],
+        onSelectNote: { _ in },
         selectedBlockID: model.selectedBlock?.id,
         selectedOpenSlotID: nil,
         currentMinute: 9 * 60 + 30,
@@ -1447,6 +1481,8 @@ private struct TodayUnavailableInspectorView: View {
     let model = PreviewSupport.todayModel(document: SamoyedDocument(), currentMinute: nil)
     TodayTimelineView(
         model: model,
+        notes: [],
+        onSelectNote: { _ in },
         selectedBlockID: nil,
         selectedOpenSlotID: nil,
         currentMinute: nil,
@@ -1472,6 +1508,8 @@ private struct TodayUnavailableInspectorView: View {
     )
     TodayTimelineView(
         model: model,
+        notes: [],
+        onSelectNote: { _ in },
         selectedBlockID: model.selectedBlock?.id,
         selectedOpenSlotID: nil,
         currentMinute: nil,

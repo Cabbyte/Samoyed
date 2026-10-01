@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `timeZoneConfirmed` integer DEFAULT 0 NOT NULL;
