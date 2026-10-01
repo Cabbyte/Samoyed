@@ -23,7 +23,10 @@ final class DocumentSchemaTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         XCTAssertEqual(
             Set(object.keys),
-            ["dayPlans", "savedTemplates", "weekdayRules", "overrides", "daySelections"]
+            [
+                "dayPlans", "savedTemplates", "weekdayRules", "overrides", "daySelections",
+                "feedbackEvents", "suggestions", "routineRevisionSnapshots", "plannerSettings"
+            ]
         )
     }
 }

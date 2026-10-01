@@ -1,15 +1,15 @@
 # Samoyed PRD
 
-- 版本：Draft v0.3
-- 日期：2026-06-12
-- 状态：Pre-release product contract
-- 文档目的：明确 Samoyed 的核心方向：少数稳定 Day Type 按 weekday default 自动运行，App 负责展示、提醒、checklist 执行和当天例外；本地文档是业务真相。
+- 版本：Frozen contract v1.0
+- 日期：2026-08-14
+- 状态：Implementation contract
+- 文档目的：落实 Frozen Figma `KMmryraXYpe4O2BTgadVjJ`：iOS 是 local-first Routine 运行终端，负责展示、checklist、append-only Feedback 与 Suggestion 审批；本地文档是业务真相。
 
 ## 1. 一句话定义
 
 Samoyed 不是待办清单，也不是日历，也不是手机上的日程编辑器。
 
-Samoyed 是一个单人使用的日常生活辅助 App：用户保存少数几种重复 Day Type，weekday default 自动物化今天；只有“Today is different”时才显式选择例外。App 在一天中持续、温和地展示当前状态、固定提示语和 checklist。
+Samoyed 是一个单人使用的日常生活辅助 App：用户运行少数几种已批准 Routine，weekday default 自动物化今天；需要例外时从已有 Routine 或 No Routine 中选择。App 在一天中持续、温和地展示当前状态、固定提示语和 checklist。
 
 ## 2. 产品本质
 
@@ -33,7 +33,7 @@ Samoyed 的本质不是“帮用户在手机上规划今天”，而是“把已
 - 一天中不同状态之间的平滑切换
 - 系统表面上的轻量陪伴与快速完成
 
-用户每天不需要重新规划或确认。核心体验是默认 Day Type 自动运行；只有今天确实不同，才通过明确入口选择其他 Day Type、选择无 routine，或做仅影响今天的轻量修正。
+用户每天不需要重新规划或确认。核心体验是默认 Routine 自动运行；只有今天确实不同，才通过 Today 的当前 Routine 入口选择其他已有 Routine 或 No Routine。Today 的结构始终只读。
 
 ## 3. 产品定位
 
@@ -102,10 +102,10 @@ App 可以：
 App 不可以：
 
 - 在当天运行界面创建 block
-- 在当天运行界面进行复杂结构编辑；Today-only correction 只允许修正当天既有 block 的标题、时间和 note
+- 在当天运行界面修改既有 block 的标题、时间、note、checklist 或 reminder
 - 通过拖拽 resize block
 - 通过取消 block 改变当天结构
-- 把 Today-only correction 反向写回 Saved Day Type、Routine Definition 或 Routine Config File
+- 从 Today 反向写回 Saved Day Type、Routine Definition 或 Routine Config File
 - 成为 v1 的可视化 routine builder
 
 ### 4.2 结构状态与执行状态必须分离
@@ -256,7 +256,7 @@ Samoyed 的提醒不应像闹钟那样中断用户。
 - 当天的 block、note、checklist、reminder 都来自该 routine
 - 用户不需要在手机上重复选择或规划日程细节
 
-v1 中，每天只运行一个 routine，不支持多个 routine 组合运行。“Today is different”允许显式改选当天 routine 或选择无 routine，且不修改 usual week。
+v1 中，每天只运行一个 Routine，不支持多个 Routine 组合运行。Today 的当前 Routine 入口允许显式改选当天 Routine 或选择 No Routine，且不修改 Usual Week。
 
 ### 6.3 日常执行
 
@@ -270,16 +270,15 @@ v1 中，每天只运行一个 routine，不支持多个 routine 组合运行。
 
 ### 6.4 今天与 routine 不完全匹配时
 
-如果今天和默认 routine 有差异，v1 提供三个窄入口：选择另一个已有 routine、选择无 routine，以及对既有 block 做 Today-only correction。
+如果今天和默认 Routine 有差异，v1 提供两个窄入口：选择另一个已有 Routine，或选择 No Routine。
 
 正确处理方式是：
 
 - 必要时继续按当前 routine 展示与执行
-- 通过“Today is different”选择另一个已有 routine 或无 routine
-- 对标题、开始/结束时间或 note 做仅影响当天的轻量修正
-- routine 本身需要改变时，在 Library 或 Routine Definition 层修改未来默认结构
+- 通过 Today 的当前 Routine 入口选择另一个已有 Routine 或 No Routine
+- Routine 本身需要改变时，导入新配置或审批一个经过本地校验的 Suggestion
 
-App 不提供创建 block、拖拽 resize、reparent、取消并塌缩层级、修改 checklist/reminder 等复杂当天编排能力。Today-only correction 不得写回 Saved Day Type。
+App 不提供创建 block、拖拽 resize、reparent、取消并塌缩层级，以及标题、时间、note、checklist/reminder 的结构编辑能力。
 
 ### 6.5 外部智能编排
 
@@ -291,6 +290,16 @@ App 不提供创建 block、拖拽 resize、reparent、取消并塌缩层级、�
 - 用户在本地预览、校验、确认并导入
 
 这是一种“外部生成 Routine Config File，本地确认运行”的结构，而不是云端同步或远程真相。
+
+### 6.6 Feedback、Suggestions 与 Planner
+
+- Feedback 是 append-only 本地事件；保存不得修改 Routine、DayPlan 结构或 checklist completion。
+- Planner 只能生成 Suggestion，不能静默改变正在运行的计划。
+- Daily-plan Suggestion 接受后只影响目标日期，不改变 Usual Week 或来源 Routine。
+- Routine-improvement Suggestion 接受后创建可追溯的新 version，并保持已经物化的 Today 不变。
+- Planner 是可选外部 seam。没有真实配置时 production 必须显示 disconnected；本地运行不依赖网络。
+- 当前没有 production server、云同步、定时规划或 Feedback 远程同步。
+- Suggestion 入口为 `samoyed://import-suggestion?v=1&payload=<base64url-json>`；内嵌最大 32 KiB，远程最大 512 KiB，HTTPS only，导入只进入 Inbox，不自动 apply。
 
 ## 7. 核心产品原则
 
@@ -384,7 +393,7 @@ v1 规则：
 
 ### 10.5 Materialized Day
 
-`Materialized Day` 是某个 routine 在某个本地自然日上的运行快照。它通常由默认 Day Type 自动生成，也可以包含不回写来源 routine 的 Today-only correction。
+`Materialized Day` 是某个 Routine 在某个本地自然日上的运行快照。它通常由 Usual Week 自动生成，也可以由日期级 Routine 选择替换。
 
 它包含：
 
@@ -394,7 +403,7 @@ v1 规则：
 - 从 Routine Definition 解析出的 reminder
 - 当天本地 checklist 完成状态
 
-它不是 Saved Day Type 的结构权威；当天轻量修正只属于这个日期。
+它不是 Saved Day Type 的结构权威；当天 checklist completion 只属于这个日期。
 
 ### 10.6 TimeBlock
 
@@ -492,7 +501,7 @@ weekday default 自动决定今天运行哪一个 routine，例如：
 - `Today`
 - Widget
 - Live Activity
-- Control
+- App Shortcut
 - Shortcut
 - 本地通知
 
@@ -502,13 +511,13 @@ weekday default 自动决定今天运行哪一个 routine，例如：
 - 该注意什么
 - checklist 里还有什么
 
-### 11.5 区分当天修正与结构改进
+### 11.5 区分当天执行与结构改进
 
-Today-only correction 只修正今天既有 block 的标题、时间或 note，不改变来源 Day Type。如果用户发现 routine 本身需要改变，结构改进应发生在 Library / Routine Definition 层：
+Today 只读展示既有 block；checklist completion 与 Feedback 不改变来源 Routine。如果用户发现 Routine 本身需要改变，结构改进必须成为可审批的 Suggestion 或新的导入文件：
 
 - 用户在 App 外修改 Routine Config File
-- 或让 AI/外部工具生成新的 Routine Config File
-- 再导入 App
+- 或让 AI/外部工具生成版本化 Suggestion
+- 再导入 App 并由用户审批
 - 之后用于未来日期
 
 App 的当天运行界面不承担创建、删除、reparent、checklist/reminder 修改等复杂结构职责。
@@ -532,7 +541,7 @@ App 的当天运行界面不承担创建、删除、reparent、checklist/reminde
 - 不做外部日历集成。
 - 不做传统云同步。
 - 不做手机端可视化 routine builder。
-- 不做复杂当天日程编排；保留有限的 Today-only correction。
+- 不做任何当天结构编排或 block 属性编辑。
 - 不做 block 创建、resize、reparent、cancel 工作流。
 - 不做“手机上随时记一条任务”的主路径。
 - 不做高侵入性的闹钟式提醒系统。
@@ -659,7 +668,7 @@ Samoyed 采用三个一级页面。
 功能定义：
 
 - weekday default 应自动选择当天 routine，不要求用户每天确认。
-- “Today is different”应提供显式、可理解、低成本的日期级例外选择。
+- Today 的当前 Routine 入口应提供显式、可理解、低成本的日期级例外选择。
 - routine 选择直接决定当天的 block 结构、checklist、note 和 reminder。
 - v1 中一个自然日只运行一个 routine。
 
@@ -674,14 +683,14 @@ Samoyed 采用三个一级页面。
 功能定义：
 
 - App 将默认或显式 Daily Routine Selection 物化为当天运行快照。
-- 物化结果可供 Now、Today、Widget、Live Activity、Control、Shortcut 和通知使用。
+- 物化结果可供 Now、Today、Widget、Live Activity、App Shortcut 和通知使用。
 - 物化结果可以被缓存或持久化，但不能成为 routine 结构权威。
 - 当天 checklist 完成状态与物化结构关联保存。
 
 产品要求：
 
 - 物化过程必须可重复、可解释、可从 Routine Definition 重新生成。
-- 物化结构只允许 Today-only correction；修正不得写回 Saved Day Type。
+- 物化结构在 Today 中只读；Feedback 不得直接写回 Saved Day Type。
 - checklist 完成状态不得回写 Routine Definition。
 
 ### 15.4 Now：当前运行视图
@@ -702,7 +711,7 @@ Samoyed 采用三个一级页面。
 - `Now` 的语言应该像“陪伴你运行这一天”，而不是“提醒你还有很多事没做”。
 - `Now` 不能包含结构编辑入口。
 
-### 15.5 Today：结构视图与当天轻量修正
+### 15.5 Today：只读结构视图
 
 功能定义：
 
@@ -711,13 +720,13 @@ Samoyed 采用三个一级页面。
 - 展示当前时间线。
 - 支持查看 block 详情。
 - 支持查看 note、checklist 和 reminder。
-- 支持对当天既有 block 的标题、开始/结束时间和 note 做 Today-only correction。
+- 支持完成明确的 checklist item，并从 block 发起 Feedback。
 
 产品要求：
 
-- `Today` 以“查看和理解”为主，只提供明确标记为 Today only 的轻量修正。
+- `Today` 以“查看和理解”为主，不提供结构编辑。
 - 任何复杂编排能力都不应出现在 Today。
-- Today 中的 block 详情是 inspector；其修正入口不得被误解为 Saved Day Type editor。
+- Today 中的 block 详情是只读 inspector，只包含 checklist completion、Feedback 与 Done。
 
 ### 15.6 Checklist 执行系统
 
@@ -838,9 +847,9 @@ Live Activity 是“当前这件事正在进行”的持续展示。
 - 它应该帮助用户维持当前状态，而不是制造存在感。
 - Live Activity 不提供结构编辑或 routine 切换。
 
-### 15.13 Controls / App Shortcuts / Quick Actions
+### 15.13 App Shortcuts
 
-这些系统入口的共同定位是：
+六个 App Intent 的共同定位是：
 
 - 快速进入当前运行状态
 - 快速完成当前 checklist
@@ -870,7 +879,7 @@ Live Activity 是“当前这件事正在进行”的持续展示。
 
 这些能力如果未来需要出现，必须作为独立的“Routine Definition authoring”或“routine builder”产品重新定义，不能混入当前运行终端。
 
-例外：Today-only correction 可以修改当天既有 block 的标题、开始/结束时间和 note；它不得创建或删除结构、修改 checklist/reminder，也不得写回 Saved Day Type。
+没有移动端结构编辑例外。Routine 的任何结构变化都必须来自导入或经用户审批的 Suggestion。
 
 ## 17. 信息优先级
 
@@ -882,7 +891,7 @@ Samoyed 的信息优先级应当始终是：
 4. 我此刻还有哪几个 checklist item 没完成？
 5. 今天整体结构是什么？
 6. 这个结构来自哪份 Routine Definition？
-7. 这是 Today-only correction，还是需要回到 Library / Routine Definition 层改变未来默认？
+7. 这是当天 checklist 执行，还是需要在 Suggestions 中审批未来版本？
 
 不应把“如何在 App 内编辑它”作为信息层级的一部分。
 
@@ -919,7 +928,7 @@ Samoyed 的成功不应以“新增了多少任务”或“编辑了多少 block
 - 默认 Day Type 是否可靠自动运行，用户是否只在例外日进行选择
 - 用户是否高频使用 `Now`
 - 用户是否会通过 `Today` 理解当天结构
-- 用户是否在 App 外通过 Widget / Live Activity / Control 完成 checklist
+- 用户是否在 App 外通过 Widget / Live Activity 完成 checklist
 - 用户是否减少了在手机上临时组织生活的负担
 - 用户是否感受到提醒是“配合的”，而不是“打断的”
 - 用户是否能用外部工具或 AI 生成并迭代 Routine Definition
@@ -943,7 +952,7 @@ Samoyed 的成功不应以“新增了多少任务”或“编辑了多少 block
 - `Now` 作为执行页
 - `Today` 作为时间轴结构页
 - 分层 block 与 `taskSourceBlock`
-- Widget / Live Activity / Controls / Shortcuts
+- Widget / Live Activity / App Shortcuts
 - 导入导出基础
 - 通知动作
 - checklist 完成状态
@@ -965,7 +974,7 @@ Samoyed 的成功不应以“新增了多少任务”或“编辑了多少 block
 
 - Routine Definition 成为结构权威。
 - Library 围绕 Routine Definition 管理。
-- Today 保持查看优先，并只保留不写回 Day Type 的轻量修正。
+- Today 完全只读，只保留 checklist completion、Feedback 和现有 Routine 选择。
 - Now 和系统表面聚焦执行。
 - App 只记录当天 checklist completion 等执行状态。
 

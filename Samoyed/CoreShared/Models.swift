@@ -507,6 +507,11 @@ public struct SavedDayTemplate: Identifiable, Equatable, Codable, Sendable {
     public var blocks: [BlockTemplate]
     public var createdAt: Date
     public var updatedAt: Date
+    public var logicalRoutineID: UUID
+    public var revision: Int
+    public var versionID: UUID
+    public var parentVersionID: UUID?
+    public var provenance: RoutineVersionProvenance?
 
     public init(
         id: UUID = UUID(),
@@ -514,7 +519,12 @@ public struct SavedDayTemplate: Identifiable, Equatable, Codable, Sendable {
         sourceSuggestedTemplateID: UUID? = nil,
         blocks: [BlockTemplate],
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        logicalRoutineID: UUID? = nil,
+        revision: Int = 1,
+        versionID: UUID? = nil,
+        parentVersionID: UUID? = nil,
+        provenance: RoutineVersionProvenance? = nil
     ) {
         self.id = id
         self.title = title
@@ -522,6 +532,57 @@ public struct SavedDayTemplate: Identifiable, Equatable, Codable, Sendable {
         self.blocks = blocks
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.logicalRoutineID = logicalRoutineID ?? id
+        self.revision = max(1, revision)
+        self.versionID = versionID ?? id
+        self.parentVersionID = parentVersionID
+        self.provenance = provenance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case sourceSuggestedTemplateID
+        case blocks
+        case createdAt
+        case updatedAt
+        case logicalRoutineID
+        case revision
+        case versionID
+        case parentVersionID
+        case provenance
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        sourceSuggestedTemplateID = try container.decodeIfPresent(UUID.self, forKey: .sourceSuggestedTemplateID)
+        blocks = try container.decode([BlockTemplate].self, forKey: .blocks)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        logicalRoutineID = try container.decodeIfPresent(UUID.self, forKey: .logicalRoutineID) ?? id
+        revision = max(1, try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1)
+        // Legacy documents had no version identity. Reusing the stable routine ID for
+        // that first revision makes repeated legacy decodes deterministic.
+        versionID = try container.decodeIfPresent(UUID.self, forKey: .versionID) ?? id
+        parentVersionID = try container.decodeIfPresent(UUID.self, forKey: .parentVersionID)
+        provenance = try container.decodeIfPresent(RoutineVersionProvenance.self, forKey: .provenance)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(sourceSuggestedTemplateID, forKey: .sourceSuggestedTemplateID)
+        try container.encode(blocks, forKey: .blocks)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(logicalRoutineID, forKey: .logicalRoutineID)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(versionID, forKey: .versionID)
+        try container.encodeIfPresent(parentVersionID, forKey: .parentVersionID)
+        try container.encodeIfPresent(provenance, forKey: .provenance)
     }
 }
 
@@ -535,33 +596,6 @@ public struct UpcomingActiveBlock: Equatable, Sendable {
     public init(block: TimeBlock, transitionMinuteOfDay: Int) {
         self.block = block
         self.transitionMinuteOfDay = transitionMinuteOfDay
-    }
-}
-
-// The only P0 edit shape for a materialized day. It preserves identity and hierarchy,
-// and deliberately excludes reminders, layer controls, and template scheduling.
-public struct TodayBlockCorrection: Equatable, Sendable {
-    public var blockID: UUID
-    public var title: String
-    public var startMinuteOfDay: Int
-    public var endMinuteOfDay: Int
-    public var note: String?
-    public var tasks: [TaskItem]
-
-    public init(
-        blockID: UUID,
-        title: String,
-        startMinuteOfDay: Int,
-        endMinuteOfDay: Int,
-        note: String? = nil,
-        tasks: [TaskItem]
-    ) {
-        self.blockID = blockID
-        self.title = title
-        self.startMinuteOfDay = startMinuteOfDay
-        self.endMinuteOfDay = endMinuteOfDay
-        self.note = note
-        self.tasks = tasks
     }
 }
 

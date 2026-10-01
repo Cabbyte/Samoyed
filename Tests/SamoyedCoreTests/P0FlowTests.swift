@@ -105,42 +105,6 @@ final class P0FlowTests: XCTestCase {
         XCTAssertEqual(throughGap.transitionMinuteOfDay, 780)
     }
 
-    func testTodayCorrectionPreservesOverlayHierarchyAndChangesOnlyInputPlan() throws {
-        let parentID = UUID()
-        let overlayID = UUID()
-        let original = makePlan(blocks: [
-            baseBlock(id: parentID, title: "Morning", start: 480, requestedEnd: 720),
-            overlayRelative(
-                id: overlayID,
-                parentID: parentID,
-                layerIndex: 1,
-                title: "Focus",
-                offset: 30,
-                duration: 60,
-                tasks: [task("Draft")]
-            )
-        ])
-        let corrected = try DayPlanEngine.correctBlock(
-            TodayBlockCorrection(
-                blockID: overlayID,
-                title: "Deep Focus",
-                startMinuteOfDay: 540,
-                endMinuteOfDay: 630,
-                note: "Today only",
-                tasks: [task("Ship")]
-            ),
-            in: original
-        )
-
-        let block = try XCTUnwrap(corrected.blocks.first { $0.id == overlayID })
-        XCTAssertEqual(block.parentBlockID, parentID)
-        XCTAssertEqual(block.layerIndex, 1)
-        XCTAssertEqual(block.timing, .relative(startOffsetMinutes: 60, requestedDurationMinutes: 90))
-        XCTAssertEqual(block.title, "Deep Focus")
-        XCTAssertTrue(corrected.hasUserEdits)
-        XCTAssertEqual(original.blocks.first { $0.id == overlayID }?.title, "Focus")
-    }
-
     func testValidationEventEncodingHasNoUserContentFields() throws {
         let event = ValidationEvent(
             participantID: UUID(),

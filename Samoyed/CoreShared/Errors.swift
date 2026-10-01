@@ -34,7 +34,6 @@ public enum SamoyedCoreError: Error, Equatable, Sendable {
     case emptyTemplateTitle
     case emptyTemplateBlocks
     case emptyActivationWeekdays
-    case emptyBlockTitle
     case regenerationNotAllowedForNonFutureDate(LocalDay)
     case regenerationBlockedByUserEdits(LocalDay)
     case regenerationBlockedByCompletedTasks(LocalDay)
@@ -88,13 +87,11 @@ extension SamoyedCoreError: LocalizedError {
         case .missingTemplateParent:
             return "A template block references a missing parent block."
         case .emptyTemplateTitle:
-            return "Template title cannot be empty."
+            return "Routine title cannot be empty."
         case .emptyTemplateBlocks:
             return "A day type needs at least one block."
         case .emptyActivationWeekdays:
             return "Choose at least one usual weekday."
-        case .emptyBlockTitle:
-            return "Block title cannot be empty."
         case .regenerationNotAllowedForNonFutureDate:
             return "Only future day plans can be regenerated."
         case .regenerationBlockedByUserEdits:

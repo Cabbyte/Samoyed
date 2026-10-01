@@ -19,7 +19,13 @@ struct SamoyedApp: App {
         // `WindowGroup` 代表应用的主窗口集合。
         // 在 iPhone 上通常可以粗略理解为“主界面容器”。
         WindowGroup {
+            #if DEBUG
+            SamoyedQAViewport {
+                ContentView()
+            }
+            #else
             ContentView()
+            #endif
         }
     }
 }
@@ -177,6 +183,13 @@ struct ContentView: View {
                 payload: payload,
                 suggestedTitle: title
             )
+
+        case let .importSuggestion(version, payload, _):
+            do {
+                try store.importSuggestion(version: version, payload: payload)
+            } catch {
+                store.presentError(error)
+            }
 
         case .startCurrentBlockLiveActivity:
             store.startCurrentBlockLiveActivity(

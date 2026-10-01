@@ -76,6 +76,23 @@ final class SystemSupportTests: XCTestCase {
         XCTAssertTrue(deepLink.absoluteString.contains("payload=dmVyc2lvbjogMQo"))
     }
 
+    func testSystemRouteRoundTripsInlineSuggestionPayload() throws {
+        let route = SamoyedSystemRoute.importSuggestion(
+            version: 1,
+            payload: "eyJpZCI6InN0YWJsZSJ9",
+            source: .app
+        )
+        let deepLink = try XCTUnwrap(route.url)
+
+        XCTAssertEqual(deepLink.host, "import-suggestion")
+        XCTAssertEqual(SamoyedSystemRoute(url: deepLink), route)
+        XCTAssertNil(
+            SamoyedSystemRoute(
+                url: try XCTUnwrap(URL(string: "samoyed://import-suggestion?v=1"))
+            )
+        )
+    }
+
     func testSystemRouteRejectsIncompleteOrAmbiguousInlineRoutineLinks() throws {
         XCTAssertNil(
             SamoyedSystemRoute(
@@ -109,7 +126,7 @@ final class SystemSupportTests: XCTestCase {
 
     func testDocumentRepositoryLoadsSavesAndMutatesUsingFileURL() throws {
         let fileURL = FileManager.default.temporaryDirectory
-            .appending(path: "SamoyedTests")
+            .appending(path: "Samoyed Tests")
             .appending(path: "\(UUID().uuidString).json")
         let repository = SamoyedDocumentRepository(fileURL: fileURL)
         let template = SavedDayTemplate(

@@ -9,19 +9,31 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
     public var weekdayRules: [WeekdayTemplateRule]
     public var overrides: [DateTemplateOverride]
     public var daySelections: [DayTemplateSelection]
+    public var feedbackEvents: [FeedbackEvent]
+    public var suggestions: [Suggestion]
+    public var routineRevisionSnapshots: [RoutineRevisionSnapshot]
+    public var plannerSettings: PlannerSettings
 
     public init(
         dayPlans: [DayPlan] = [],
         savedTemplates: [SavedDayTemplate] = [],
         weekdayRules: [WeekdayTemplateRule] = [],
         overrides: [DateTemplateOverride] = [],
-        daySelections: [DayTemplateSelection] = []
+        daySelections: [DayTemplateSelection] = [],
+        feedbackEvents: [FeedbackEvent] = [],
+        suggestions: [Suggestion] = [],
+        routineRevisionSnapshots: [RoutineRevisionSnapshot] = [],
+        plannerSettings: PlannerSettings = PlannerSettings()
     ) {
         self.dayPlans = dayPlans
         self.savedTemplates = savedTemplates
         self.weekdayRules = weekdayRules
         self.overrides = overrides
         self.daySelections = daySelections
+        self.feedbackEvents = feedbackEvents
+        self.suggestions = suggestions
+        self.routineRevisionSnapshots = routineRevisionSnapshots
+        self.plannerSettings = plannerSettings
     }
 
     enum CodingKeys: String, CodingKey {
@@ -30,6 +42,10 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
         case weekdayRules
         case overrides
         case daySelections
+        case feedbackEvents
+        case suggestions
+        case routineRevisionSnapshots
+        case plannerSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -39,6 +55,10 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
         weekdayRules = try container.decodeIfPresent([WeekdayTemplateRule].self, forKey: .weekdayRules) ?? []
         overrides = try container.decodeIfPresent([DateTemplateOverride].self, forKey: .overrides) ?? []
         daySelections = try container.decodeIfPresent([DayTemplateSelection].self, forKey: .daySelections) ?? []
+        feedbackEvents = try container.decodeIfPresent([FeedbackEvent].self, forKey: .feedbackEvents) ?? []
+        suggestions = try container.decodeIfPresent([Suggestion].self, forKey: .suggestions) ?? []
+        routineRevisionSnapshots = try container.decodeIfPresent([RoutineRevisionSnapshot].self, forKey: .routineRevisionSnapshots) ?? []
+        plannerSettings = try container.decodeIfPresent(PlannerSettings.self, forKey: .plannerSettings) ?? PlannerSettings()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -48,6 +68,10 @@ public struct SamoyedDocument: Equatable, Codable, Sendable {
         try container.encode(weekdayRules, forKey: .weekdayRules)
         try container.encode(overrides, forKey: .overrides)
         try container.encode(daySelections, forKey: .daySelections)
+        try container.encode(feedbackEvents, forKey: .feedbackEvents)
+        try container.encode(suggestions, forKey: .suggestions)
+        try container.encode(routineRevisionSnapshots, forKey: .routineRevisionSnapshots)
+        try container.encode(plannerSettings, forKey: .plannerSettings)
     }
 }
 

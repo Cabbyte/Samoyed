@@ -79,6 +79,11 @@ enum SamoyedSystemRoute: Equatable, Sendable {
         title: String? = nil,
         source: SamoyedSystemSource? = nil
     )
+    case importSuggestion(
+        version: Int,
+        payload: String,
+        source: SamoyedSystemSource? = nil
+    )
     case startCurrentBlockLiveActivity(source: SamoyedSystemSource? = nil)
     case endCurrentBlockLiveActivity(source: SamoyedSystemSource? = nil)
 
@@ -155,6 +160,18 @@ enum SamoyedSystemRoute: Equatable, Sendable {
                 )
             }
 
+        case "import-suggestion":
+            guard
+                let payload = components.queryItems?.value(for: "payload"),
+                !payload.isEmpty,
+                let versionText = components.queryItems?.value(for: "v"),
+                let version = Int(versionText),
+                version > 0
+            else {
+                return nil
+            }
+            self = .importSuggestion(version: version, payload: payload, source: source)
+
         case "start-live-activity":
             self = .startCurrentBlockLiveActivity(source: source)
 
@@ -204,6 +221,14 @@ enum SamoyedSystemRoute: Equatable, Sendable {
                 payloadVersion: version,
                 payload: payload,
                 routineTitle: title,
+                source: source
+            )
+
+        case let .importSuggestion(version, payload, source):
+            components.host = "import-suggestion"
+            components.queryItems = queryItems(
+                payloadVersion: version,
+                payload: payload,
                 source: source
             )
 

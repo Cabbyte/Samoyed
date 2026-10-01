@@ -3,7 +3,7 @@
 ## Product Authority
 - Read `PRD.md` before accepting feature work. It owns the target user, product behavior, P0/P1 boundary, frozen capabilities, and validation criteria.
 - `README.md` owns domain models and algorithms; `Design.md` owns UI expression.
-- `SystemSurfaces.md` and `weiget.md` describe deferred system-surface work and cannot expand the current product scope.
+- Frozen Figma `KMmryraXYpe4O2BTgadVjJ`, `PRD.md`, and `SystemSurfaces.md` define the shipping product scope; archive-era mobile-authoring screens do not.
 - Existing code is a technical asset, not evidence that a capability belongs in the active product scope.
 
 ## Read Order
@@ -16,7 +16,7 @@
 - `SamoyedWidgetExtension`: widget rendering and widget-only entry points
 
 ## Product Change Gate
-- During P0, prioritize empty-data activation, automatic default-day running, `Now`, exception switching, lightweight Today correction, and local persistence.
+- Prioritize Starter/import activation, automatic default-day running, `Now`, read-only `Today`, append-only Feedback, Suggestion approval, and local persistence.
 - Do not expand frozen capabilities merely because their implementation already exists.
 - Before accepting a feature, identify the user problem, journey stage, measurable outcome, smallest experiment, and explicit non-goal.
 - If a change does not improve the P0 acceptance flow or a PRD metric, keep it out of the active scope.
@@ -34,7 +34,7 @@
 - Prefer adding a `MARK` section and a private helper before splitting a file.
 
 ## When To Avoid Abstraction
-- Do not add a protocol, factory, manager, or service container unless there is a second real implementation today.
+- Add protocols only at real external seams such as `PlannerClient`; keep local services concrete.
 - Prefer a concrete type with explicit parameters over a hidden dependency layer.
 - Prefer one obvious write path over multiple convenience entry points.
 
@@ -44,6 +44,9 @@
 - Keep repository code limited to loading, saving, and atomic document mutation.
 - Keep route parsing outside `SamoyedStore`.
 - Verify the empty-document path when changing startup, templates, or materialization.
+- Verify legacy decode defaults whenever adding a `SamoyedDocument` or Routine-version field.
+- Verify suggestion import/apply is transactional, idempotent, and never auto-applies.
+- Keep production Planner disconnected unless a real configured client reports otherwise.
 - Run `swift test` after core changes.
 - Run an Xcode build after app or widget entry changes.
 

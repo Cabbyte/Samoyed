@@ -37,6 +37,12 @@ struct SetWidgetTaskCompletionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // Production widget actions are completion-only. Ignore a stale or
+        // hand-authored intent payload that attempts to reopen a task.
+        guard isCompleted else {
+            return .result()
+        }
+
         guard
             let localDay = LocalDay(isoDateString: dateISO),
             let blockUUID = UUID(uuidString: blockID),
@@ -50,7 +56,7 @@ struct SetWidgetTaskCompletionIntent: AppIntent {
             on: localDay,
             blockID: blockUUID,
             taskID: taskUUID,
-            isCompleted: isCompleted,
+            isCompleted: true,
             repository: repository
         )
 

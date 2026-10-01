@@ -78,6 +78,8 @@ final class SamoyedStore {
     // 2. 预览/测试可以替换 repository 的落点
     private let documentRepository: SamoyedDocumentRepository
     private let validationLogger: ValidationEventLogger
+    private let feedbackService: FeedbackService
+    private let suggestionService: SuggestionService
     private var nowVisibleDays: Set<LocalDay> = []
 
     init(
@@ -88,6 +90,8 @@ final class SamoyedStore {
         tintPreset = SamoyedTintPreference.load()
         self.documentRepository = documentRepository
         self.validationLogger = validationLogger
+        feedbackService = FeedbackService(repository: documentRepository)
+        suggestionService = SuggestionService(repository: documentRepository)
     }
 
     // MARK: Bootstrap
@@ -411,124 +415,6 @@ final class SamoyedStore {
         }?.id
     }
 
-    @discardableResult
-    func createRoutine(
-        title rawTitle: String,
-        blockTitle rawBlockTitle: String,
-        note rawNote: String,
-        startMinuteOfDay: Int,
-        endMinuteOfDay: Int
-    ) throws -> UUID {
-        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else {
-            throw SamoyedCoreError.emptyTemplateTitle
-        }
-
-        let blockID = UUID()
-        guard startMinuteOfDay < endMinuteOfDay else {
-            throw SamoyedCoreError.invalidResolvedRange(
-                blockID: blockID,
-                start: startMinuteOfDay,
-                end: endMinuteOfDay
-            )
-        }
-
-        let blockTitle = rawBlockTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = rawNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        let routine = SavedDayTemplate(
-            title: title,
-            sourceSuggestedTemplateID: UUID(),
-            blocks: [
-                BlockTemplate(
-                    id: blockID,
-                    layerIndex: 0,
-                    title: blockTitle.isEmpty ? title : blockTitle,
-                    note: note.isEmpty ? nil : note,
-                    timing: .absolute(
-                        startMinuteOfDay: startMinuteOfDay,
-                        requestedEndMinuteOfDay: endMinuteOfDay
-                    )
-                )
-            ]
-        )
-
-        _ = try TemplateEngine.previewDayPlan(from: routine)
-        document.savedTemplates.append(routine)
-        document.savedTemplates.sort { $0.updatedAt > $1.updatedAt }
-        try persistDocument()
-        return routine.id
-    }
-
-    func updateRoutine(
-        id: UUID,
-        title rawTitle: String,
-        blockTitle rawBlockTitle: String,
-        note rawNote: String,
-        startMinuteOfDay: Int,
-        endMinuteOfDay: Int
-    ) throws {
-        guard let routineIndex = document.savedTemplates.firstIndex(where: { $0.id == id }) else {
-            throw SamoyedCoreError.missingSavedTemplate(id)
-        }
-
-        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else {
-            throw SamoyedCoreError.emptyTemplateTitle
-        }
-
-        var routine = document.savedTemplates[routineIndex]
-        let rootIndex = routine.blocks.firstIndex {
-            $0.layerIndex == 0 && $0.parentTemplateBlockID == nil
-        }
-        let validationID = rootIndex.map { routine.blocks[$0].id } ?? UUID()
-        guard startMinuteOfDay < endMinuteOfDay else {
-            throw SamoyedCoreError.invalidResolvedRange(
-                blockID: validationID,
-                start: startMinuteOfDay,
-                end: endMinuteOfDay
-            )
-        }
-
-        let blockTitle = rawBlockTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = rawNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        let updatedBlock = BlockTemplate(
-            id: validationID,
-            layerIndex: 0,
-            title: blockTitle.isEmpty ? title : blockTitle,
-            note: note.isEmpty ? nil : note,
-            timing: .absolute(
-                startMinuteOfDay: startMinuteOfDay,
-                requestedEndMinuteOfDay: endMinuteOfDay
-            )
-        )
-
-        if let rootIndex {
-            routine.blocks[rootIndex].title = updatedBlock.title
-            routine.blocks[rootIndex].note = updatedBlock.note
-            routine.blocks[rootIndex].timing = updatedBlock.timing
-        } else {
-            routine.blocks.append(updatedBlock)
-        }
-        routine.title = title
-        routine.updatedAt = .now
-
-        _ = try TemplateEngine.previewDayPlan(from: routine)
-        document.savedTemplates[routineIndex] = routine
-        try persistDocument()
-    }
-
-    func deleteRoutine(id: UUID) throws {
-        guard document.savedTemplates.contains(where: { $0.id == id }) else {
-            throw SamoyedCoreError.missingSavedTemplate(id)
-        }
-
-        document.savedTemplates.removeAll { $0.id == id }
-        document.weekdayRules.removeAll { $0.savedTemplateID == id }
-        document.overrides.removeAll { $0.savedTemplateID == id }
-        document.daySelections.removeAll { $0.selectedTemplateID == id }
-        try persistDocument()
-    }
-
     func exportRoutineConfigYAML(templateID: UUID) throws -> String {
         guard let routine = savedTemplate(id: templateID) else {
             throw SamoyedCoreError.missingSavedTemplate(templateID)
@@ -594,23 +480,26 @@ final class SamoyedStore {
 
     // MARK: Commands
 
-    func activate(
-        with draft: SimpleDayTypeDraft,
+    func activateStarterRoutine(
+        assignedWeekdays: Set<Weekday>,
         today: LocalDay = .today(),
         startedAt: Date = .now
     ) throws {
         do {
-            let template = try draft.makeNewTemplate(createdAt: startedAt)
-            let activated = try TemplateEngine.activate(
-                document: document,
-                template: template,
-                assignedWeekdays: draft.assignedWeekdays,
-                today: today,
-                activatedAt: startedAt
-            )
-            // Save the candidate before publishing it so the UI never observes a partial activation.
-            try documentRepository.save(activated)
-            document = activated
+            guard !assignedWeekdays.isEmpty else {
+                throw SamoyedCoreError.emptyActivationWeekdays
+            }
+            let template = try StarterRoutineFactory.makeRoutine(createdAt: startedAt)
+            let outcome = try documentRepository.mutate { current in
+                current = try TemplateEngine.activate(
+                    document: current,
+                    template: template,
+                    assignedWeekdays: assignedWeekdays,
+                    today: today,
+                    activatedAt: startedAt
+                )
+            }
+            document = outcome.document
             selectedDate = today
             selectedTab = .now
             selectedBlockID = nil
@@ -634,48 +523,77 @@ final class SamoyedStore {
         }
     }
 
-    func saveEditedTemplate(
-        _ templateID: UUID,
-        title: String,
-        blocks: [BlockTemplate],
-        assignedWeekdays: Set<Weekday>
-    ) throws {
-        document = try TemplateEngine.updateSavedTemplate(
-            templateID,
-            title: title,
-            blocks: blocks,
-            assignedWeekdays: assignedWeekdays,
-            in: document
-        )
-        try persistDocument()
-    }
-
-    func saveSimpleDayType(_ draft: SimpleDayTypeDraft) throws {
-        if let templateID = draft.templateID {
-            try saveEditedTemplate(
-                templateID,
-                title: draft.title,
-                blocks: draft.blocks.map(\.blockTemplate),
-                assignedWeekdays: draft.assignedWeekdays
+    @discardableResult
+    func saveFeedback(
+        target: FeedbackTarget,
+        on day: LocalDay,
+        sentiment: FeedbackSentiment?,
+        note: String,
+        source: FeedbackSource
+    ) throws -> FeedbackEvent {
+        let saved = try feedbackService.save(
+            FeedbackEvent(
+                target: target,
+                localDay: day,
+                sentiment: sentiment,
+                note: note,
+                source: source
             )
-        } else {
-            let template = try draft.makeNewTemplate()
-            var candidate = document
-            candidate.savedTemplates.append(template)
-            candidate.weekdayRules.removeAll { draft.assignedWeekdays.contains($0.weekday) }
-            candidate.weekdayRules.append(contentsOf: draft.assignedWeekdays
-                .sorted { $0.rawValue < $1.rawValue }
-                .map { WeekdayTemplateRule(weekday: $0, savedTemplateID: template.id) })
-            candidate.weekdayRules.sort { $0.weekday.rawValue < $1.weekday.rawValue }
-            try documentRepository.save(candidate)
-            document = candidate
-            documentDidChange()
-        }
+        )
+        try reloadAfterServiceMutation()
+        return saved
     }
 
-    func applyTodayCorrection(_ correction: TodayBlockCorrection, on date: LocalDay) throws {
-        let corrected = try DayPlanEngine.correctBlock(correction, in: materializedDayPlan(on: date))
-        try commit(dayPlan: corrected)
+    func importSuggestion(version: Int, payload: String) throws {
+        _ = try suggestionService.importSuggestion(version: version, payload: payload)
+        try reloadAfterServiceMutation()
+        openLibrary(destination: .suggestions)
+    }
+
+    func acceptSuggestion(
+        _ suggestionID: UUID,
+        allowReplacingExecutionState: Bool = false
+    ) throws {
+        _ = try suggestionService.accept(
+            suggestionID,
+            today: .today(),
+            allowReplacingExecutionState: allowReplacingExecutionState
+        )
+        try reloadAfterServiceMutation()
+    }
+
+    func rejectSuggestion(_ suggestionID: UUID) throws {
+        _ = try suggestionService.reject(suggestionID)
+        try reloadAfterServiceMutation()
+    }
+
+    func assignRoutine(_ routineID: UUID?, to weekday: Weekday) throws {
+        if let routineID, savedTemplate(id: routineID) == nil {
+            throw SamoyedCoreError.missingSavedTemplate(routineID)
+        }
+        let outcome = try documentRepository.mutate { document in
+            document.weekdayRules.removeAll { $0.weekday == weekday }
+            if let routineID {
+                document.weekdayRules.append(
+                    WeekdayTemplateRule(weekday: weekday, savedTemplateID: routineID)
+                )
+                document.weekdayRules.sort { $0.weekday.rawValue < $1.weekday.rawValue }
+            }
+        }
+        document = outcome.document
+        documentDidChange()
+    }
+
+    func disconnectPlanner() {
+        do {
+            let outcome = try documentRepository.mutate { document in
+                document.plannerSettings = PlannerSettings()
+            }
+            document = outcome.document
+            documentDidChange()
+        } catch {
+            presentError(error)
+        }
     }
 
     func completeTask(
@@ -878,12 +796,22 @@ final class SamoyedStore {
         documentDidChange()
     }
 
+    private func reloadAfterServiceMutation() throws {
+        if let latest = try documentRepository.load() {
+            document = latest
+        }
+        documentDidChange()
+    }
+
     // MARK: Persistence & System Sync
 
     private func documentDidChange() {
         // The P0 app keeps the dormant widget projection fresh, but it does not
         // automatically start activities or schedule notifications.
         refreshVisualSystemSurfaces()
+        syncCurrentBlockLiveActivity(
+            referenceDate: SamoyedSimulationClock.adjusted(.now)
+        )
     }
 
     private func refreshVisualSystemSurfaces() {

@@ -15,7 +15,7 @@ struct SamoyedCurrentBlockLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 7) {
-                        SamoyedLiveActivityMark(accent: context.state.accent, compact: true)
+                        SamoyedLiveActivityMark(state: context.state.displayState, accent: context.state.accent, compact: true)
 
                         Text(context.state.title)
                             .font(.headline)
@@ -69,7 +69,7 @@ private struct SamoyedLiveActivityLockScreenView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                SamoyedLiveActivityMark(accent: context.state.accent)
+                SamoyedLiveActivityMark(state: context.state.displayState, accent: context.state.accent)
 
                 Text(context.state.title)
                     .font(.headline)
@@ -205,11 +205,12 @@ private struct SamoyedLiveActivityTaskToggle: View {
 
 @available(iOS 16.1, *)
 private struct SamoyedLiveActivityMark: View {
+    let state: SamoyedLiveActivityDisplayState
     let accent: Color
     var compact = false
 
     var body: some View {
-        Image(systemName: "bolt.fill")
+        Image(systemName: state.iconName)
             .font(compact ? .caption2.weight(.bold) : .caption.weight(.bold))
             .foregroundStyle(.white)
             .frame(width: compact ? 22 : 28, height: compact ? 22 : 28)
@@ -227,6 +228,16 @@ private extension ActivityViewContext<SamoyedCurrentBlockActivityAttributes> {
 
 @available(iOS 16.1, *)
 private extension SamoyedCurrentBlockActivityAttributes.ContentState {
+    var displayState: SamoyedLiveActivityDisplayState {
+        if remainingTaskCount == 0 {
+            return .caughtUp
+        }
+        if displaySourceBlockTitle != nil {
+            return .fallback
+        }
+        return .active
+    }
+
     var isCaughtUp: Bool {
         remainingTaskCount == 0
     }
@@ -246,15 +257,30 @@ private extension SamoyedCurrentBlockActivityAttributes.ContentState {
     }
 
     var compactIconName: String {
-        isCaughtUp ? "checkmark.circle.fill" : "bolt.fill"
+        displayState.iconName
     }
 
     var minimalIconName: String {
-        isCaughtUp ? "checkmark" : "bolt.fill"
+        displayState.iconName
     }
 
     var compactTrailingText: String {
         isCaughtUp ? "Done" : "\(min(remainingTaskCount, 9))"
+    }
+}
+
+@available(iOS 16.1, *)
+private enum SamoyedLiveActivityDisplayState {
+    case active
+    case fallback
+    case caughtUp
+
+    var iconName: String {
+        switch self {
+        case .active: "checklist"
+        case .fallback: "arrow.turn.down.right"
+        case .caughtUp: "checkmark"
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 # Samoyed Design
 
-本文档定义 Samoyed 的 iOS 产品结构、界面层级和术语。当前设计以 [PRD.md](PRD.md) 为准：Samoyed 是一个 routine runner，少数稳定 Day Type 通过 weekday default 自动运行；App 负责物化、展示、提醒、checklist 执行与当天例外。
+本文档定义 Samoyed 的 iOS 产品结构、界面层级和术语。当前实现以 Frozen Figma `KMmryraXYpe4O2BTgadVjJ` 为产品合同：Samoyed 是一个 local-first routine runner；iPhone 负责运行、查看、反馈和审批 Suggestion，不负责结构编排。
 
 如果本文档与 PRD 冲突，以 PRD 为准。
 
@@ -8,12 +8,13 @@
 
 Samoyed 的界面目标是让用户稳定运行已经定义好的 routine，而不是在手机上临时规划或编辑一天。
 
-UI 应帮助用户完成四件事：
+UI 应帮助用户完成以下事情：
 
 - 导入并理解可运行的 Routine Definition。
-- 让 weekday default 自动运行，只有当天例外才要求显式选择。
-- 查看当天 Materialized Day，并在必要时做 Today-only correction。
+- 让 weekday default 自动运行，并允许为某一天选择另一个已批准 Routine 或 No Routine。
+- 以只读时间线查看当天 Materialized Day。
 - 在执行过程中完成 checklist item。
+- 追加本地 Feedback，并审批或拒绝 Planner 产生的 Suggestion。
 
 UI 不应承担：
 
@@ -29,8 +30,9 @@ UI 不应承担：
 1. 我先在配置文件或外部工具里定义 routine。
 2. 我把 Routine Config File 导入 Samoyed。
 3. App 根据 weekday default 自动选择今天的 routine。
-4. 只有“Today is different”时，我才选择日期级例外。
-5. App 把选择物化为当天运行快照；Today-only correction 和 checklist completion 都不会改动 Saved Day Type。
+4. 需要例外时，我从 Today 的当前 Routine 入口选择另一个已批准 Routine 或 No Routine。
+5. App 把选择物化为当天运行快照；Feedback 与 checklist completion 都不会直接改动 Routine。
+6. 结构改进必须先成为 Suggestion，经我批准后创建可追溯的新 Routine version。
 
 ## 3. Terminology
 
@@ -91,7 +93,7 @@ v1 规则：
 
 ### 3.5 Materialized Day
 
-`Materialized Day` 是 Daily Routine Selection 在某个日期上的运行快照；它可以包含不写回来源 routine 的 Today-only correction。
+`Materialized Day` 是 Daily Routine Selection 在某个日期上的运行快照。Today 与 Block Details 对结构完全只读；当天只允许 checklist completion 和显式 Routine 选择。
 
 它包含：
 
@@ -182,7 +184,7 @@ flowchart TD
 
 ### Purpose
 
-`Today` 回答：今天自动或显式选择的 routine 被物化成了什么结构，今天是否需要轻量修正？
+`Today` 回答：今天自动或显式选择的 Routine 被物化成了什么只读结构？
 
 ### Shows
 
@@ -199,7 +201,8 @@ flowchart TD
 - 展开或收起详情面板。
 - 跳到当前 active block。
 - 勾选 checklist item，前提是该 checklist item 是执行状态的一部分。
-- 通过明确的 Today-only 入口修正既有 block 的标题、开始/结束时间和 note。
+- 通过日期下的 Routine 入口选择已有 Routine 或 No Routine。
+- 为当前 block 追加 Feedback；Feedback 不直接修改结构。
 
 ### Does Not Allow
 
@@ -259,7 +262,7 @@ Routine Config Files 页面应展示：
 
 ## 9. System Surfaces
 
-Widgets、Live Activities、Controls、Shortcuts、notifications 只服务运行和显示：
+Widgets、Live Activities、App Shortcuts 与 notifications 只服务运行和显示：
 
 - 展示当前 routine 状态。
 - 打开 Now、Today 或 Library。
@@ -282,11 +285,11 @@ Widgets、Live Activities、Controls、Shortcuts、notifications 只服务运行
 - 使用动态字体。
 - 保持信息密度清晰，不做营销式 landing page。
 
-Today timeline 可以定制视觉，但必须保持查看优先、修正受限的心智：
+Today timeline 可以定制视觉，但必须保持结构只读的心智：
 
 - selected state 可以高亮。
 - open gap 可以显示，但不应使用加号暗示新增。
-- block detail 只允许一个明确标记为 Today only 的轻量修正入口，不出现通用编辑 action group。
+- block detail 只提供查看、完成 checklist、Feedback 与 Done，不出现结构编辑 action group。
 
 ## 11. Implementation Notes
 
@@ -305,6 +308,8 @@ Today timeline 可以定制视觉，但必须保持查看优先、修正受限�
 - Today 没有 save today as routine。
 - Library 使用 Routines 和 Routine Config Files 术语。
 - Routine Config File import 加入 library，不替换今天。
-- weekday default 自动运行；“Today is different”只覆盖某个日期且不改变 usual week。
+- weekday default 自动运行；日期级 Routine 选择只覆盖某个日期且不改变 Usual Week。
 - Checklist completion 只改变 Execution State。
+- Feedback append-only，不直接改变 Routine 或 DayPlan 结构。
+- Planner 是可选外部 seam，只能创建 Suggestion；生产默认 disconnected。
 - System surfaces 不提供结构编辑能力。

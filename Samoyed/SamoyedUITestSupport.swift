@@ -1,10 +1,44 @@
 #if DEBUG
 import Foundation
+import SwiftUI
+
+/// A bounded content preview, not an emulation of a different device or its sheets.
+struct SamoyedQAViewport<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var measuredWidth: CGFloat = 0
+
+    private var requestedWidth: CGFloat? {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SAMOYED_UI_TEST_FIXTURE"] != nil,
+              let value = environment["SAMOYED_QA_CONTENT_WIDTH"].flatMap(Double.init),
+              (280 ... 500).contains(value) else { return nil }
+        return CGFloat(value)
+    }
+
+    var body: some View {
+        if let requestedWidth {
+            content()
+                .frame(width: requestedWidth)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { measuredWidth = $0 }
+                .overlay(alignment: .bottomTrailing) {
+                    Text("QA content \(Int(measuredWidth)) pt")
+                        .font(.system(size: 10))
+                        .padding(2)
+                        .background(.regularMaterial)
+                        .accessibilityIdentifier("qa-content-width")
+                }
+                .frame(maxWidth: .infinity)
+        } else {
+            content()
+        }
+    }
+}
 
 @MainActor
 enum SamoyedUITestSupport {
     private static let fixtureKey = "SAMOYED_UI_TEST_FIXTURE"
     private static let resetKey = "SAMOYED_UI_TEST_RESET"
+    private static let routeKey = "SAMOYED_UI_TEST_ROUTE"
 
     static func makeStoreIfRequested(
         processInfo: ProcessInfo = .processInfo,
@@ -25,8 +59,16 @@ enum SamoyedUITestSupport {
 
         if processInfo.environment[resetKey] == "1" {
             try? fileManager.removeItem(at: fileURL)
-            prepareFixture(fixture, repository: repository, fileURL: fileURL)
+            SamoyedTintPreference.save(.ocean)
+            prepareFixture(
+                fixture,
+                repository: repository,
+                fileURL: fileURL,
+                fileManager: fileManager
+            )
         }
+
+        enqueueExternalRouteIfRequested(processInfo: processInfo)
 
         return SamoyedStore(
             documentRepository: repository,
@@ -37,142 +79,43 @@ enum SamoyedUITestSupport {
     private static func prepareFixture(
         _ fixture: String,
         repository: SamoyedDocumentRepository,
-        fileURL: URL
+        fileURL: URL,
+        fileManager: FileManager
     ) {
-        switch fixture {
-        case "empty":
-            break
-
-        case "active", "complex":
-            if let document = try? SampleDataFactory.seededDocument(referenceDay: .today()) {
-                try? repository.save(document)
-            }
-
-        case "open-time":
-            let now = Date.now.minuteOfDay
-            let beforeEnd = max(min(now - 30, 10 * 60), 60)
-            let afterStart = min(max(now + 30, beforeEnd + 30), 22 * 60)
-            let plan = DayPlan(
-                date: .today(),
-                blocks: [
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "Earlier",
-                        timing: .absolute(startMinuteOfDay: max(beforeEnd - 60, 0), requestedEndMinuteOfDay: beforeEnd)
-                    ),
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "Later",
-                        timing: .absolute(startMinuteOfDay: afterStart, requestedEndMinuteOfDay: min(afterStart + 60, 24 * 60))
-                    )
-                ]
-            )
-            try? repository.save(SamoyedDocument(dayPlans: [plan]))
-
-        case "all-done":
-            let now = Date.now.minuteOfDay
-            let start = max(now - 30, 0)
-            let end = min(max(now + 30, start + 5), 24 * 60)
-            let plan = DayPlan(
-                date: .today(),
-                blocks: [
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "Finished",
-                        tasks: [TaskItem(title: "Done", isCompleted: true, completedAt: .now)],
-                        timing: .absolute(startMinuteOfDay: start, requestedEndMinuteOfDay: end)
-                    )
-                ]
-            )
-            try? repository.save(SamoyedDocument(dayPlans: [plan]))
-
-        case "single-layer-days":
-            let today = LocalDay.today()
-            let tomorrow = today.adding(days: 1)
-
-            func plan(for day: LocalDay) -> DayPlan {
-                DayPlan(
-                    date: day,
-                    blocks: [
-                        TimeBlock(
-                            layerIndex: 0,
-                            title: "Morning",
-                            tasks: [TaskItem(title: "Plan the day")],
-                            timing: .absolute(startMinuteOfDay: 420, requestedEndMinuteOfDay: 720)
-                        ),
-                        TimeBlock(
-                            layerIndex: 0,
-                            title: "Lunch",
-                            timing: .absolute(startMinuteOfDay: 720, requestedEndMinuteOfDay: 780)
-                        ),
-                        TimeBlock(
-                            layerIndex: 0,
-                            title: "Afternoon",
-                            tasks: [
-                                TaskItem(title: "Review progress"),
-                                TaskItem(title: "Wrap up", order: 1)
-                            ],
-                            timing: .absolute(startMinuteOfDay: 780, requestedEndMinuteOfDay: 1080)
-                        ),
-                        TimeBlock(
-                            layerIndex: 0,
-                            title: "Evening",
-                            timing: .absolute(startMinuteOfDay: 1080, requestedEndMinuteOfDay: 1320)
-                        )
-                    ]
+        if fixture == "load-error" {
+            do {
+                try fileManager.createDirectory(
+                    at: fileURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
                 )
+                try Data("not-json".utf8).write(to: fileURL, options: .atomic)
+            } catch {
+                preconditionFailure("Unable to prepare load-error UI fixture: \(error)")
             }
-
-            try? repository.save(
-                SamoyedDocument(dayPlans: [plan(for: today), plan(for: tomorrow)])
-            )
-
-        case "elastic-timeline":
-            let afternoonID = UUID()
-            let plan = DayPlan(
-                date: .today(),
-                blocks: [
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "Before",
-                        timing: .absolute(startMinuteOfDay: 0, requestedEndMinuteOfDay: 600)
-                    ),
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "Lunch",
-                        timing: .absolute(startMinuteOfDay: 720, requestedEndMinuteOfDay: 780)
-                    ),
-                    TimeBlock(
-                        id: afternoonID,
-                        layerIndex: 0,
-                        title: "Afternoon",
-                        timing: .absolute(startMinuteOfDay: 780, requestedEndMinuteOfDay: 1080)
-                    ),
-                    TimeBlock(
-                        parentBlockID: afternoonID,
-                        layerIndex: 1,
-                        title: "Project Work",
-                        timing: .relative(startOffsetMinutes: 15, requestedDurationMinutes: 150)
-                    ),
-                    TimeBlock(
-                        layerIndex: 0,
-                        title: "After",
-                        timing: .absolute(startMinuteOfDay: 1080, requestedEndMinuteOfDay: 1440)
-                    )
-                ]
-            )
-            try? repository.save(SamoyedDocument(dayPlans: [plan]))
-
-        case "load-error":
-            try? FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try? Data("not-json".utf8).write(to: fileURL, options: .atomic)
-
-        default:
-            break
+            return
         }
+
+        guard let document = SamoyedQAFixtureFactory.document(named: fixture) else {
+            preconditionFailure("Unknown Samoyed UI test fixture: \(fixture)")
+        }
+
+        do {
+            try repository.save(document)
+        } catch {
+            preconditionFailure("Unable to save Samoyed UI test fixture \(fixture): \(error)")
+        }
+    }
+
+    private static func enqueueExternalRouteIfRequested(processInfo: ProcessInfo) {
+        guard let routeValue = processInfo.environment[routeKey] else { return }
+        guard
+            let routeURL = URL(string: routeValue),
+            SamoyedSystemRoute(url: routeURL) != nil
+        else {
+            preconditionFailure("Invalid Samoyed UI test route: \(routeValue)")
+        }
+
+        SamoyedExternalRouteCenter.shared.enqueue(routeURL)
     }
 }
 #endif

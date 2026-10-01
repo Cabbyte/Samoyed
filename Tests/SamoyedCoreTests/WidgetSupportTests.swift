@@ -81,9 +81,11 @@ final class WidgetSupportTests: XCTestCase {
         XCTAssertEqual(snapshot.blocks.map { $0.layerIndex }, [1, 0])
         XCTAssertTrue(snapshot.blocks.first?.isCurrent == true)
         XCTAssertEqual(snapshot.remainingTaskCount, 2)
-        XCTAssertEqual(snapshot.tasks.map { $0.title }, ["Current next", "Completed first", "Base task"])
-        XCTAssertEqual(snapshot.tasks.map { $0.blockTitle }, ["Focus Sprint", "Focus Sprint", "Morning"])
-        XCTAssertEqual(snapshot.tasks.map { $0.layerIndex }, [1, 1, 0])
+        XCTAssertEqual(snapshot.state, .active)
+        XCTAssertEqual(snapshot.tasks.map { $0.title }, ["Current next", "Base task"])
+        XCTAssertEqual(snapshot.tasks.map { $0.blockTitle }, ["Focus Sprint", "Morning"])
+        XCTAssertEqual(snapshot.tasks.map { $0.layerIndex }, [1, 0])
+        XCTAssertTrue(snapshot.tasks.allSatisfy { !$0.isCompleted })
     }
 
     func testRepositoryWidgetSnapshotUsesNoRoutineStateWhenTodayHasNoSelection() throws {
@@ -100,9 +102,88 @@ final class WidgetSupportTests: XCTestCase {
             maxTaskCount: 3
         )
 
-        XCTAssertFalse(snapshot.requiresTemplateSelection)
+        XCTAssertEqual(snapshot.state, .needsSetup)
         XCTAssertTrue(snapshot.blocks.isEmpty)
         XCTAssertTrue(snapshot.tasks.isEmpty)
-        XCTAssertEqual(snapshot.statusMessage, "No routine today")
+        XCTAssertEqual(snapshot.statusMessage, "Choose today’s routine")
+    }
+
+    func testWidgetSnapshotSeparatesCaughtUpFromUnavailable() {
+        let blockID = UUID()
+        let caughtUp = SamoyedWidgetSnapshotBuilder.makeSnapshot(
+            from: NowScreenModel(
+                date: LocalDay(year: 2026, month: 3, day: 22),
+                minuteOfDay: 600,
+                activeChain: [
+                    NowChainItem(
+                        id: blockID,
+                        title: "Focus",
+                        layerIndex: 0,
+                        startMinuteOfDay: 540,
+                        endMinuteOfDay: 660,
+                        isBlank: false,
+                        hasIncompleteTasks: false,
+                        isCurrent: true
+                    )
+                ],
+                currentBlockTitle: "Focus",
+                noteSections: [],
+                statusMessage: nil,
+                taskSourceTitle: nil,
+                taskSections: [],
+                focusState: .active
+            ),
+            maxTaskCount: 3
+        )
+        let unavailable = SamoyedWidgetSnapshotBuilder.makeSnapshot(
+            from: NowScreenModel(
+                date: LocalDay(year: 2026, month: 3, day: 22),
+                minuteOfDay: 720,
+                activeChain: [],
+                currentBlockTitle: nil,
+                noteSections: [],
+                statusMessage: "Open time",
+                taskSourceTitle: nil,
+                taskSections: [],
+                focusState: .openTime
+            ),
+            maxTaskCount: 3
+        )
+
+        XCTAssertEqual(caughtUp.state, .caughtUp)
+        XCTAssertEqual(unavailable.state, .unavailable)
+        XCTAssertEqual(unavailable.statusMessage, "Open time")
+    }
+
+    func testWidgetTimelineUsesNumericBlockBoundaryBeforeFallback() throws {
+        let day = LocalDay(year: 2026, month: 3, day: 22)
+        let referenceDate = try XCTUnwrap(day.date(minuteOfDay: 600))
+        let snapshot = SamoyedWidgetSnapshot(
+            date: day,
+            minuteOfDay: 600,
+            state: .active,
+            currentBlockTitle: "Focus",
+            currentBlockTimeRangeText: "10:00 - 10:05",
+            blocks: [
+                SamoyedWidgetBlockItem(
+                    blockID: UUID().uuidString,
+                    title: "Focus",
+                    layerIndex: 0,
+                    timeRangeText: "10:00 - 10:05",
+                    endMinuteOfDay: 605,
+                    isBlank: false,
+                    hasIncompleteTasks: true,
+                    isCurrent: true
+                )
+            ],
+            remainingTaskCount: 1,
+            tasks: [],
+            statusMessage: nil
+        )
+
+        XCTAssertEqual(
+            SamoyedWidgetSnapshotBuilder.nextRefreshDate(for: snapshot, referenceDate: referenceDate),
+            try XCTUnwrap(day.date(minuteOfDay: 605))
+        )
     }
 }

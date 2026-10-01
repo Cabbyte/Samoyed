@@ -52,17 +52,10 @@ struct SamoyedNowWidgetProvider: TimelineProvider {
         } catch {
             return SamoyedNowWidgetEntry(
                 date: date,
-                snapshot: SamoyedWidgetSnapshot(
+                snapshot: .unavailable(
                     date: LocalDay(date: date),
                     minuteOfDay: date.minuteOfDay,
-                    requiresTemplateSelection: false,
-                    currentBlockTitle: nil,
-                    currentBlockTimeRangeText: nil,
-                    currentBlockNote: nil,
-                    blocks: [],
-                    remainingTaskCount: 0,
-                    tasks: [],
-                    statusMessage: "Open Samoyed to finish setting up the widget."
+                    message: "Open Samoyed to refresh this widget."
                 )
             )
         }
@@ -117,7 +110,7 @@ private struct SamoyedNowWidgetEntryView: View {
     }
 
     private var isCaughtUp: Bool {
-        !entry.snapshot.requiresTemplateSelection && entry.snapshot.remainingTaskCount == 0
+        entry.snapshot.state == .caughtUp
     }
 
     private var remainingLabel: String {
@@ -143,10 +136,12 @@ private struct SamoyedNowWidgetEntryView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            if entry.snapshot.requiresTemplateSelection {
+            if entry.snapshot.state == .needsSetup {
                 setupCard(compact: true)
             } else if isCaughtUp {
                 caughtUpCard(compact: true)
+            } else if entry.snapshot.state == .unavailable {
+                unavailableCard(compact: true)
             } else {
                 smallBlockStack
             }
@@ -162,19 +157,19 @@ private struct SamoyedNowWidgetEntryView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            if entry.snapshot.requiresTemplateSelection {
+            if entry.snapshot.state == .needsSetup {
                 setupCard(compact: false)
+            } else if isCaughtUp {
+                caughtUpCard(compact: false)
+            } else if entry.snapshot.state == .unavailable {
+                unavailableCard(compact: false)
             } else {
                 HStack(alignment: .top, spacing: 10) {
                     mediumCurrentBlock
 
-                    if shownTasks.isEmpty {
-                        caughtUpCard(compact: false)
-                    } else {
-                        VStack(spacing: 7) {
-                            ForEach(shownTasks) { item in
-                                taskToggle(item)
-                            }
+                    VStack(spacing: 7) {
+                        ForEach(shownTasks) { item in
+                            taskToggle(item)
                         }
                     }
                 }
@@ -189,21 +184,27 @@ private struct SamoyedNowWidgetEntryView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("NOW")
+            Text(entry.snapshot.state == .needsSetup ? "SETUP" : "NOW")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(currentStyle.accent)
                 .tracking(0.4)
 
             Spacer(minLength: 8)
 
-            if entry.snapshot.requiresTemplateSelection {
-                Image(systemName: "exclamationmark")
+            if entry.snapshot.state == .needsSetup {
+                Image(systemName: "slider.horizontal.3")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(currentStyle.badgeForeground)
                     .frame(width: 22, height: 22)
                     .background(currentStyle.badgeBackground, in: Circle())
             } else if isCaughtUp {
                 Image(systemName: "checkmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(.quaternary, in: Circle())
+            } else if entry.snapshot.state == .unavailable {
+                Image(systemName: "exclamationmark.triangle")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
@@ -218,7 +219,7 @@ private struct SamoyedNowWidgetEntryView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Now, \(entry.snapshot.requiresTemplateSelection ? "setup needed" : remainingLabel)")
+        .accessibilityLabel("Now, \(entry.snapshot.accessibilityStateLabel)")
     }
 
     private var smallBlockStack: some View {
@@ -313,23 +314,22 @@ private struct SamoyedNowWidgetEntryView: View {
         let style = style(for: item)
 
         return Toggle(
-            isOn: item.isCompleted,
+            isOn: false,
             intent: SetWidgetTaskCompletionIntent(
                 dateISO: item.dateISO,
                 blockID: item.blockID,
                 taskID: item.taskID,
-                isCompleted: !item.isCompleted
+                isCompleted: true
             )
         ) {
             HStack(spacing: 7) {
-                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: "circle")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(item.isCompleted ? .secondary : style.accent)
+                    .foregroundStyle(style.accent)
 
                 Text(item.title)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(item.isCompleted ? .secondary : .primary)
-                    .strikethrough(item.isCompleted, color: .secondary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -342,12 +342,12 @@ private struct SamoyedNowWidgetEntryView: View {
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity, minHeight: 28)
         .background(
-            item.isCompleted ? Color.secondary.opacity(0.09) : style.surface,
+            style.surface,
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
         )
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .invalidatableContent(true)
-        .accessibilityLabel("\(item.isCompleted ? "Reopen" : "Complete") \(item.title)")
+        .accessibilityLabel("Complete \(item.title)")
     }
 
     private func setupCard(compact: Bool) -> some View {
@@ -381,15 +381,34 @@ private struct SamoyedNowWidgetEntryView: View {
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private func unavailableCard(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label("Open Samoyed", systemImage: "exclamationmark.triangle")
+                .font(compact ? .footnote.weight(.semibold) : .headline)
+
+            Text(entry.snapshot.statusMessage ?? "Current information is unavailable.")
+                .font(compact ? .caption2 : .caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(compact ? 4 : 3)
+        }
+        .padding(compact ? 10 : 12)
+        .frame(maxWidth: .infinity, maxHeight: compact ? nil : .infinity, alignment: .topLeading)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     private var accessoryInlineLayout: some View {
-        Text(accessoryInlineText)
+        Label(accessoryInlineText, systemImage: entry.snapshot.systemImageName)
             .lineLimit(1)
             .containerBackground(for: .widget) { Color.clear }
     }
 
     private var accessoryInlineText: String {
-        if entry.snapshot.requiresTemplateSelection {
+        if entry.snapshot.state == .needsSetup {
             return "Choose today’s routine"
+        }
+
+        if entry.snapshot.state == .unavailable {
+            return "Open Samoyed"
         }
 
         let title = entry.snapshot.currentBlockTitle ?? "Now"
@@ -398,11 +417,14 @@ private struct SamoyedNowWidgetEntryView: View {
 
     private var accessoryRectangularLayout: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text((entry.snapshot.currentBlockTitle ?? "NOW").uppercased())
+            Label(
+                (entry.snapshot.currentBlockTitle ?? (entry.snapshot.state == .needsSetup ? "SETUP" : "NOW")).uppercased(),
+                systemImage: entry.snapshot.systemImageName
+            )
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
 
-            if entry.snapshot.requiresTemplateSelection {
+            if entry.snapshot.state == .needsSetup {
                 Text("Choose today’s routine")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -411,6 +433,11 @@ private struct SamoyedNowWidgetEntryView: View {
                 Text("All caught up")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            } else if entry.snapshot.state == .unavailable {
+                Text("Open Samoyed to refresh")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             } else {
                 Text("\(entry.snapshot.remainingTaskCount) remaining")
                     .font(.caption2.weight(.semibold))
@@ -431,10 +458,10 @@ private struct SamoyedNowWidgetEntryView: View {
             AccessoryWidgetBackground()
 
             VStack(spacing: 1) {
-                Image(systemName: isCaughtUp ? "checkmark" : "checklist")
+                Image(systemName: entry.snapshot.systemImageName)
                     .font(.caption2.weight(.semibold))
 
-                Text(entry.snapshot.requiresTemplateSelection ? "!" : "\(min(entry.snapshot.remainingTaskCount, 9))")
+                Text(entry.snapshot.circularStateLabel)
                     .font(.system(.title3, design: .rounded).weight(.bold))
                     .minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
@@ -461,8 +488,35 @@ private struct SamoyedNowWidgetEntryView: View {
 }
 
 private extension SamoyedWidgetSnapshot {
+    var systemImageName: String {
+        switch state {
+        case .active: "checklist"
+        case .caughtUp: "checkmark"
+        case .needsSetup: "slider.horizontal.3"
+        case .unavailable: "exclamationmark.triangle"
+        }
+    }
+
+    var circularStateLabel: String {
+        switch state {
+        case .active: "\(min(remainingTaskCount, 9))"
+        case .caughtUp: "Done"
+        case .needsSetup: "Set"
+        case .unavailable: "Open"
+        }
+    }
+
+    var accessibilityStateLabel: String {
+        switch state {
+        case .active: "\(remainingTaskCount) left"
+        case .caughtUp: "all caught up"
+        case .needsSetup: "setup needed"
+        case .unavailable: "information unavailable"
+        }
+    }
+
     var destinationURL: URL? {
-        if requiresTemplateSelection {
+        if state == .needsSetup {
             return SamoyedSystemRoute.library(source: .widget).url
         }
 
@@ -488,7 +542,7 @@ private extension SamoyedWidgetSnapshot {
         return SamoyedWidgetSnapshot(
             date: LocalDay(year: 2026, month: 8, day: 12),
             minuteOfDay: 10 * 60,
-            requiresTemplateSelection: false,
+            state: .active,
             currentBlockTitle: "Deep Work",
             currentBlockTimeRangeText: "09:00 - 11:00",
             currentBlockNote: "Finish the review while the decisions are fresh.",
@@ -565,7 +619,7 @@ private extension SamoyedWidgetSnapshot {
         SamoyedWidgetSnapshot(
             date: LocalDay(year: 2026, month: 8, day: 12),
             minuteOfDay: 13 * 60 + 30,
-            requiresTemplateSelection: false,
+            state: .caughtUp,
             currentBlockTitle: "Lunch",
             currentBlockTimeRangeText: "13:00 - 14:00",
             currentBlockNote: nil,
@@ -585,12 +639,32 @@ private extension SamoyedWidgetSnapshot {
             statusMessage: "No incomplete tasks in this chain."
         )
     }
+
+    static var previewNeedsSetup: SamoyedWidgetSnapshot {
+        .needsSetup(
+            date: LocalDay(year: 2026, month: 8, day: 12),
+            minuteOfDay: 8 * 60,
+            message: "Choose a routine to bring Now into focus."
+        )
+    }
 }
 
 #Preview("Small - Active", as: .systemSmall) {
     SamoyedNowWidget()
 } timeline: {
     SamoyedNowWidgetEntry(date: .now, snapshot: .previewFocused)
+}
+
+#Preview("Small - Caught Up", as: .systemSmall) {
+    SamoyedNowWidget()
+} timeline: {
+    SamoyedNowWidgetEntry(date: .now, snapshot: .previewEmpty)
+}
+
+#Preview("Small - Needs Setup", as: .systemSmall) {
+    SamoyedNowWidget()
+} timeline: {
+    SamoyedNowWidgetEntry(date: .now, snapshot: .previewNeedsSetup)
 }
 
 #Preview("Medium - Active", as: .systemMedium) {
@@ -603,6 +677,12 @@ private extension SamoyedWidgetSnapshot {
     SamoyedNowWidget()
 } timeline: {
     SamoyedNowWidgetEntry(date: .now, snapshot: .previewEmpty)
+}
+
+#Preview("Medium - Needs Setup", as: .systemMedium) {
+    SamoyedNowWidget()
+} timeline: {
+    SamoyedNowWidgetEntry(date: .now, snapshot: .previewNeedsSetup)
 }
 
 #Preview("Accessory Inline", as: .accessoryInline) {

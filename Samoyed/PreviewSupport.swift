@@ -106,7 +106,7 @@ enum PreviewSupport {
 
     static func emptyTemplate() -> SavedDayTemplate {
         SavedDayTemplate(
-            title: "Empty Template",
+            title: "No Routine",
             sourceSuggestedTemplateID: UUID(),
             blocks: []
         )

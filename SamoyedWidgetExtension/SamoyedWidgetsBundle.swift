@@ -16,13 +16,9 @@ struct SamoyedWidgetsBundle: WidgetBundle {
             SamoyedCurrentBlockLiveActivity()
         }
 
-        if #available(iOS 18.0, *) {
-            // iOS 18 的 Control Widget，出现在控制中心等系统表面。
-            SamoyedOpenNowControl()
-            SamoyedCompleteCurrentTaskControl()
-            SamoyedOpenCurrentBlockControl()
-            SamoyedStartLiveActivityControl()
-        }
+        // Control Widget types remain source-compatible below, but are deliberately
+        // not registered in the production bundle. The supported surfaces are the
+        // home/accessory widget and the current-block Live Activity.
     }
 }
 

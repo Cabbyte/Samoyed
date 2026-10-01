@@ -47,7 +47,7 @@ actor ValidationEventLogger {
                 withIntermediateDirectories: true
             )
             let line = try encoder.encode(event) + Data([0x0A])
-            if FileManager.default.fileExists(atPath: fileURL.path()) {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
                 let handle = try FileHandle(forWritingTo: fileURL)
                 try handle.seekToEnd()
                 try handle.write(contentsOf: line)
@@ -61,7 +61,7 @@ actor ValidationEventLogger {
     }
 
     func exportURL() -> URL? {
-        guard enabled, FileManager.default.fileExists(atPath: fileURL.path()) else {
+        guard enabled, FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil
         }
         return fileURL

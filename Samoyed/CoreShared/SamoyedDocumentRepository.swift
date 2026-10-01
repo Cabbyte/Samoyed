@@ -73,7 +73,7 @@ struct SamoyedDocumentRepository {
         // “文件不存在”在这里不是异常，而是“尚未初始化”的正常状态。
         let url = try documentURL()
 
-        guard fileManager.fileExists(atPath: url.path()) else {
+        guard fileManager.fileExists(atPath: url.path) else {
             return nil
         }
 
@@ -196,7 +196,7 @@ struct SamoyedDocumentRepository {
     }
 
     private func readDocumentIfPresent(from url: URL) throws -> SamoyedDocument? {
-        guard fileManager.fileExists(atPath: url.path()) else {
+        guard fileManager.fileExists(atPath: url.path) else {
             return nil
         }
 

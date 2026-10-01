@@ -13,13 +13,14 @@
 
 当前产品阶段优先保证：
 
-- 空数据下能够创建并运行第一个真实日型。
+- 空数据下能够安装 Starter Routine 或导入第一份 Routine Config。
 - 有默认模板时自动运行今天，不要求每日重复确认。
 - `Now` 稳定回答当前状态、当前步骤和下一状态。
-- `Today` 只承担查看与处理当天例外所需的轻量修正。
+- `Today` 是只读时间线，只允许 checklist completion 与选择已有 Routine。
 - 本地数据、时间解析、任务完成和模板实例化可靠。
+- Feedback append-only；Suggestion 必须经本地审批；Planner 可选且默认 disconnected。
 
-候选模板、复杂 schedule、导入导出和多数系统入口可以作为已有技术资产保留，但当前处于冻结状态。UI 只能消费核心层语义，不能反向定义数据模型。
+导入导出、Widget、Live Activity 和六个 App Intent 是当前合同的一部分；移动端结构 authoring、Controls 与远程自动覆盖仍冻结。UI 只能消费核心层语义，不能反向定义数据模型。
 
 当前阶段对时间采用一个刻意简化的前提：
 
@@ -104,9 +105,9 @@
   - 不能直接手动创建。
 
 - `SavedDayTemplate`
-  - 可从起步模板、简化创建、导入或候选模板得到的正式模板。
+  - 可从起步模板、导入或已批准的 Routine improvement 得到的正式 Routine。
   - 不会自动滚动删除。
-  - 可以被编辑。
+  - iPhone 上只读；批准 Suggestion 时通过新 version 更新并保留 provenance。
 
 - `WeekdayTemplateRule`
   - 一个“星期几 -> 正式模板”的自动选择规则。
@@ -295,7 +296,7 @@
 
 `SuggestedDayTemplate` 是系统从最近三天自动生成的候选模板。
 
-它是实验性的模板发现能力，不是首次激活的前置条件，也不是当前产品主路径。生产用户即使没有任何历史 `DayPlan`，也必须能创建第一个 `SavedDayTemplate`。
+它是实验性的模板发现能力，不是首次激活的前置条件，也不是当前产品主路径。生产用户即使没有任何历史 `DayPlan`，也可以安装 Starter Routine 或导入第一份 `SavedDayTemplate`。
 
 建议字段：
 
@@ -325,10 +326,10 @@
 
 约束：
 
-- 正式模板可以来自起步模板、简化创建、导入，或保存某个候选模板。
+- 正式模板可以来自起步模板、导入、批准的 Suggestion，或保存某个候选模板。
 - 只有来源确实是候选模板时才填写 `sourceSuggestedTemplateID`；其他创建来源必须允许它为空，或迁移为等价的来源枚举。
 - 首次激活不能依赖最近三天候选模板。
-- 正式模板创建后可以继续编辑。
+- 正式模板在 iPhone 上只读；结构变化通过导入或经审批的 Suggestion 产生新版本。
 
 ### 2.9 `WeekdayTemplateRule`
 
@@ -419,7 +420,7 @@
 2. “最近三天”在本规格中统一定义为“含今天在内的最近三个本地自然日”，即 `today-2`、`today-1`、`today`。
 3. 候选模板会滚动刷新。
 4. 正式模板不会因为窗口滚动而自动消失。
-5. 正式模板可以从起步模板、简化创建、导入或候选模板生成，但无论来源都必须满足相同约束。
+5. 正式模板可以从起步模板、导入、批准的 Suggestion 或候选模板生成，但无论来源都必须满足相同约束。
 
 ## 4. 时间解析算法
 
@@ -626,16 +627,16 @@
 3. `today` 的候选模板不得随着表单草稿输入实时漂移；只有在一次编辑真正提交成功后才允许刷新。
 4. 用户点击“保存为正式模板”时，保存的必须是当前已冻结展示的那一版候选模板快照。
 
-## 8. 正式模板创建、保存与编辑规则
+## 8. 正式 Routine 安装、保存与版本规则
 
-### 8.0 创建正式模板
+### 8.0 安装正式 Routine
 
 生产用户必须能在没有历史计划和候选模板时获得第一个 `SavedDayTemplate`。允许的来源包括：
 
 1. 复制内置起步模板后由用户确认
-2. 通过简化创建流程从空白建立
-3. 导入结构化模板后由用户确认
-4. 从 `SuggestedDayTemplate` 保存
+2. 导入结构化 Routine Config 后由用户确认
+3. 从 `SuggestedDayTemplate` 保存（若该实验入口启用）
+4. 批准一个经过本地校验的 Routine improvement Suggestion
 
 无论来源如何，正式模板都必须经过同一套结构与时间约束校验。
 
@@ -654,20 +655,11 @@
 
 - 候选模板仍然保持候选模板身份
 - 正式模板成为独立对象
-- 后续编辑正式模板不会反向修改候选模板
+- 后续批准新的 Routine version 不会反向修改候选模板
 
-### 8.2 正式模板编辑
+### 8.2 正式 Routine 版本
 
-正式模板可以被编辑，允许修改：
-
-- 标题
-- 块结构
-- 时间定义
-- 备注
-- 提醒规则
-- 任务蓝图
-
-正式模板可以从空白创建，但 P0 创建流程只暴露运行第一天所需的最少字段。复杂层级和高级提醒配置不应成为首次激活的必填内容。
+iPhone 不暴露标题、块结构、时间、备注、提醒或任务蓝图的编辑器。结构变更来自导入或 `routineImprovement` Suggestion；接受后保持稳定的 logical Routine ID，递增 revision，生成新的 `versionID`，记录 `parentVersionID` 与 provenance，并保存旧 revision snapshot。已经物化的 Today 不随之改变。
 
 ## 9. 模板选择算法
 
@@ -900,7 +892,7 @@ UI 不负责：
 
 ### 11.5 `TodayView`
 
-`TodayView` 是整天结构查看器和当天例外修正入口。它首先负责展示今天的 `DayPlan`，只保留继续运行今天所必需的轻量编辑。
+`TodayView` 是整天结构的只读查看器。它展示今天的 `DayPlan`，只保留 checklist completion、Feedback 和选择已有 Routine。
 
 #### 11.5.1 视觉模型
 
@@ -1010,7 +1002,7 @@ UI 不负责：
 1. `Saved`
 2. `Defaults`
 
-`Suggested` 可以保留为实验性低优先区域。首次激活必须提供起步模板或简化创建入口，不能要求用户先积累三天计划。
+`Suggested` 可以保留为实验性低优先区域。首次激活必须提供起步模板或导入入口，不能要求用户先积累三天计划。
 
 #### 11.6.2 `Suggested`
 
@@ -1038,12 +1030,11 @@ UI 不负责：
 每个正式模板应支持：
 
 - 查看结构预览
-- 编辑标题
-- 编辑块结构
-- 编辑任务蓝图
-- 编辑提醒规则
+- 查看版本与 provenance
+- 选择为 Today 或 Usual Week 的现有 Routine
+- 请求 Planner 生成改进 Suggestion
 
-必须支持从起步模板、简化创建或导入得到正式模板；从候选模板保存只是可选来源。
+必须支持从起步模板或导入得到正式模板；从候选模板保存只是可选来源。
 
 #### 11.6.4 `Schedule`
 
@@ -1075,23 +1066,9 @@ UI 不负责：
 3. 如果已经存在 override，用户可以修改或清除
 4. 页面必须明确告诉用户：override 优先于 weekday 规则
 
-### 11.7 详情页与编辑器的组织方式
+### 11.7 详情页与审批界面的组织方式
 
-未来 UI 不应继续沿用现在这种“很多分散 sheet + 列表管理页”的组织方式，而应收敛为以下几类编辑器：
-
-1. `BlockEditor`
-   - 创建或编辑 `TimeBlock`
-
-2. `TaskEditor`
-   - 编辑某个块下的 checklist
-
-3. `TemplateEditor`
-   - 编辑 `SavedDayTemplate`
-
-4. `TemplateAssignmentEditor`
-   - 设置 weekday 规则和具体日期 override
-
-这些编辑器可以以 sheet、popover 或 split view detail 形式存在，但语义上应统一。
+移动端收敛为只读 Routine Detail、Block Details、Feedback sheet、Suggestions pushed navigation 和 Usual Week 的现有 Routine 选择器。结构编辑器不是 iOS 产品合同的一部分。
 
 ### 11.8 UI 状态管理
 
@@ -1099,8 +1076,8 @@ UI 层建议只保留以下几类本地状态：
 
 - 当前选中日期
 - 当前选中 block
-- 当前打开的编辑器
-- 输入中的草稿内容
+- 当前打开的只读详情或审批页面
+- Feedback 输入草稿
 - 提示信息与错误展示状态
 - 当前运行时可见的 `BlankBaseBlock` 映射
 
@@ -1165,31 +1142,30 @@ samoyed://import-routine?url=<percent-encoded-https-url>&title=<percent-encoded-
 6. deep link 不直接写入数据；用户必须在 App 内确认 Import、Replace 或 Keep Both。
 7. 导入只加入本地 Routine Library，不修改当天 Materialized Day 或 Execution State，也不建立持续同步。
 
-## 12. 当前阶段不实现的 UI 与平台集成
+## 12. 当前 UI 与平台合同
 
 当前代码已经包含 App UI 与多种系统入口。本节定义产品开发优先级，而不是描述代码是否存在。
 
-P0 只继续实现或修正：
+Frozen 合同包含：
 
 - 空数据首次激活
 - 默认模板自动运行
 - `Now` 核心执行体验
-- `Today` 查看与轻量例外修正
-- 模板的最小创建、切换与本地持久化
+- `Today` 只读查看、checklist completion 与现有 Routine 选择
+- Starter Routine、Routine 导入、切换与本地持久化
+- Feedback、Suggestions 与诚实的 Planner 状态
+- Home/Accessory Widgets、Live Activity、Dynamic Island 与六个 App Intents
 
-以下 UI 与平台能力处于冻结状态：
+以下能力仍处于冻结状态：
 
 - 复杂模板候选和 schedule 管理
 - 多层时间轴编排的继续扩展
-- YAML 导入导出的普通用户入口
-- Lock Screen accessory widgets
-- Live Activities
-- Controls、Siri、Spotlight、App Shortcuts
+- Control Widgets
 - Home Screen Quick Actions
 - Notification Actions
-- 非必要主题和视觉配置
+- 远程自动规划、云同步和无审批写入
 
-冻结能力可以保留代码与回归测试，但不得驱动新的核心抽象或扩大产品承诺。Widget 只有在 P0 验证通过后才进入 P1，且先验证一个 `Now` Widget。
+冻结能力不得在 production bundle 中注册，也不得驱动新的核心抽象或扩大产品承诺。
 
 ## 13. 单元测试要求
 

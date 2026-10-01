@@ -1,6 +1,8 @@
 import SwiftUI
+import UIKit
 
 struct TodayRootView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(SamoyedStore.self) private var store
 
     @State private var selection: TodaySelection?
@@ -8,21 +10,17 @@ struct TodayRootView: View {
     @State private var scrollToBlockTrigger = 0
     @State private var scrollToBlockID: UUID?
     @State private var dateNavigationScrollMinute: Int?
+    @State private var isShowingRoutineChooser = false
 
     var body: some View {
         NavigationStack {
-            Group {
+            TimelineView(.everyMinute) { context in
+                let referenceDate = SamoyedSimulationClock.adjusted(context.date)
                 if !store.isLoaded {
                     ScreenLoadingView(
                         title: "Loading Today",
                         systemImage: "calendar",
                         description: "Preparing your timeline and current context."
-                    )
-                } else if store.requiresTemplateSelection(for: store.selectedDate) {
-                    RoutineSelectionRequiredView(
-                        date: store.selectedDate,
-                        title: "Choose a Routine",
-                        message: "Pick one routine before Today can show the materialized timeline."
                     )
                 } else {
                     RootScreenContainer(
@@ -34,10 +32,10 @@ struct TodayRootView: View {
                         retry: store.reload
                     ) {
                         try store.todayScreenModel(
-                            currentDate: SamoyedSimulationClock.adjusted(.now)
+                            currentDate: referenceDate
                         )
                     } content: { model in
-                        timelineContent(model: model)
+                        timelineContent(model: model, referenceDate: referenceDate)
                     }
                 }
             }
@@ -62,31 +60,67 @@ struct TodayRootView: View {
         }
     }
 
-    private func timelineContent(model: TodayScreenModel) -> some View {
-        let referenceDate = SamoyedSimulationClock.adjusted(.now)
+    private func timelineContent(model: TodayScreenModel, referenceDate: Date) -> some View {
         let currentMinute = store.currentMinuteOnSelectedDate(currentDate: referenceDate)
-        return TodayTimelineView(
-            model: model,
-            selectedBlockID: selection?.blockID,
-            selectedOpenSlotID: selection?.openSlotID,
-            currentMinute: currentMinute,
-            dateNavigationScrollMinute: dateNavigationScrollMinute,
-            jumpToCurrentTrigger: jumpToCurrentTrigger,
-            scrollToBlockID: scrollToBlockID,
-            scrollToBlockTrigger: scrollToBlockTrigger,
-            timingResolver: { blockID in
-                store.persistedBlock(on: store.selectedDate, blockID: blockID)?.timing
-            },
-            onSelectBlock: handleBlockSelection,
-            onSelectOpenSlot: handleOpenSlotSelection,
-            onClearSelection: clearSelection
-        )
-        .sheet(item: $selection) { presentedSelection in
-            inspector(for: presentedSelection, model: model)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        let currentRoutine = try? store.todayTemplateChooserModel(for: model.date).currentSelection
+
+        return Group {
+            if currentRoutine == nil && model.blocks.isEmpty {
+                ContentUnavailableView {
+                    Label("No Routine Selected", systemImage: "calendar.badge.minus")
+                } description: {
+                    Text("This is a valid open day. Choose a routine if you want a structured timeline.")
+                } actions: {
+                    Button("Choose Routine") {
+                        isShowingRoutineChooser = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                TodayTimelineView(
+                    model: model,
+                    selectedBlockID: selection?.blockID,
+                    selectedOpenSlotID: selection?.openSlotID,
+                    currentMinute: currentMinute,
+                    dateNavigationScrollMinute: dateNavigationScrollMinute,
+                    jumpToCurrentTrigger: jumpToCurrentTrigger,
+                    scrollToBlockID: scrollToBlockID,
+                    scrollToBlockTrigger: scrollToBlockTrigger,
+                    timingResolver: { blockID in
+                        store.persistedBlock(on: store.selectedDate, blockID: blockID)?.timing
+                    },
+                    onSelectBlock: handleBlockSelection,
+                    onSelectOpenSlot: handleOpenSlotSelection,
+                    onClearSelection: clearSelection
+                )
+                .sheet(item: $selection) { presentedSelection in
+                    inspector(for: presentedSelection, model: model)
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingRoutineChooser) {
+            NavigationStack {
+                TodayTemplateChooserView(date: model.date) {
+                    isShowingRoutineChooser = false
+                }
+                .navigationTitle("Choose Routine")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            isShowingRoutineChooser = false
+                        }
+                    }
+                }
+            }
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                TodayRoutineChooserButton(dateTitle: model.date.titleText, title: currentRoutine?.title) {
+                    isShowingRoutineChooser = true
+                }
+            }
+
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     preserveTimelinePosition(model: model, currentMinute: currentMinute)
@@ -124,7 +158,7 @@ struct TodayRootView: View {
                 .accessibilityLabel("Next Day")
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: selection)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: selection)
         .task(id: model.date) {
             syncSelectionForDisplayedDate(using: model)
         }
@@ -294,11 +328,16 @@ private enum TodaySelection: Identifiable, Equatable {
 private struct TodayTimelineScale {
     private let mapping: TimelineElasticTimeScale
 
-    init(model: TodayScreenModel, currentMinute: Int?) {
+    init(
+        model: TodayScreenModel,
+        currentMinute: Int?,
+        readableIntervals: [TimelineElasticTimeScale.ReadableInterval] = []
+    ) {
         mapping = TimelineElasticTimeScale(
             blocks: model.blocks,
             openSlots: model.openSlots,
-            currentMinute: currentMinute
+            currentMinute: currentMinute,
+            readableIntervals: readableIntervals
         )
     }
 
@@ -345,6 +384,8 @@ private struct TodayTimelineScrollAnchor: Hashable {
 
 private struct TodayTimelineView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let model: TodayScreenModel
     let selectedBlockID: UUID?
@@ -360,18 +401,63 @@ private struct TodayTimelineView: View {
     let onClearSelection: () -> Void
 
     @State private var lastInitialScrollDate: LocalDay?
+    @State private var timelineWidth: CGFloat = 0
+    @ScaledMetric(relativeTo: .headline) private var headlinePointSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .footnote) private var footnotePointSize: CGFloat = 13
 
     private let labelWidth: CGFloat = 52
     private let trackLeadingInset: CGFloat = 12
     private let trackTrailingInset: CGFloat = 22
 
     private var scale: TodayTimelineScale {
-        TodayTimelineScale(model: model, currentMinute: currentMinute)
+        TodayTimelineScale(
+            model: model,
+            currentMinute: currentMinute,
+            readableIntervals: readableIntervals
+        )
+    }
+
+    private var readableIntervals: [TimelineElasticTimeScale.ReadableInterval] {
+        guard timelineWidth > 0 else { return [] }
+        let titleFont = UIFont.systemFont(ofSize: headlinePointSize, weight: .semibold)
+        let timeFont = UIFont.systemFont(ofSize: footnotePointSize)
+        let heights = model.blocks.map { block -> (UUID, Double) in
+            var width = timelineWidth - labelWidth - trackLeadingInset - trackTrailingInset
+            for _ in 0 ..< block.layerIndex {
+                width -= min(16, max(8, width * 0.12)) + min(8, max(4, width * 0.06))
+            }
+            let titleHeight = (block.title as NSString).boundingRect(
+                with: CGSize(width: max(1, width - 24), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: titleFont],
+                context: nil
+            ).height
+            let lines: CGFloat = titleHeight > titleFont.lineHeight + 1 ? 2 : 1
+            return (block.id, Double(max(lines == 1 ? 68 : 96,
+                ceil(titleFont.lineHeight * lines + timeFont.lineHeight + 26))))
+        }
+        return TimelineReadability.intervals(
+            blocks: model.blocks,
+            openSlots: model.openSlots,
+            headerHeights: Dictionary(uniqueKeysWithValues: heights),
+            openSlotHeight: Double(ceil(titleFont.lineHeight + timeFont.lineHeight + 26))
+        )
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
+        if voiceOverEnabled || dynamicTypeSize.isAccessibilitySize
+            || TimelineReadability.requiresAgenda(blocks: model.blocks) {
+            TodayAgendaFallback(
+                model: model,
+                currentMinute: currentMinute,
+                selectedBlockID: selectedBlockID,
+                selectedOpenSlotID: selectedOpenSlotID,
+                onSelectBlock: onSelectBlock,
+                onSelectOpenSlot: onSelectOpenSlot
+            )
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
                 ZStack(alignment: .topLeading) {
                     timelineScrollAnchors
 
@@ -404,8 +490,13 @@ private struct TodayTimelineView: View {
                 .frame(height: canvasHeight)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .task(id: model.date) {
-                guard lastInitialScrollDate != model.date else { return }
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.width
+            } action: { width in
+                timelineWidth = width
+            }
+            .task(id: timelineWidth > 0 ? model.date : nil) {
+                guard timelineWidth > 0, lastInitialScrollDate != model.date else { return }
                 lastInitialScrollDate = model.date
 
                 if let dateNavigationScrollMinute {
@@ -430,7 +521,7 @@ private struct TodayTimelineView: View {
                     scroll(to: model.initialScrollMinute, anchor: .top, proxy: proxy, animated: false)
                 }
             }
-            .onChange(of: jumpToCurrentTrigger) { _, _ in
+                .onChange(of: jumpToCurrentTrigger) { _, _ in
                 if let selectedBlockID {
                     scroll(
                         toBlock: selectedBlockID,
@@ -442,16 +533,17 @@ private struct TodayTimelineView: View {
                 } else if let currentMinute {
                     scroll(to: currentMinute, anchor: .center, proxy: proxy, animated: true)
                 }
-            }
-            .onChange(of: scrollToBlockTrigger) { _, _ in
-                guard let scrollToBlockID else { return }
-                scroll(
-                    toBlock: scrollToBlockID,
-                    fallbackMinute: currentMinute ?? model.initialScrollMinute,
-                    anchor: .center,
-                    proxy: proxy,
-                    animated: true
-                )
+                }
+                .onChange(of: scrollToBlockTrigger) { _, _ in
+                    guard let scrollToBlockID else { return }
+                    scroll(
+                        toBlock: scrollToBlockID,
+                        fallbackMinute: currentMinute ?? model.initialScrollMinute,
+                        anchor: .center,
+                        proxy: proxy,
+                        animated: true
+                    )
+                }
             }
         }
     }
@@ -572,9 +664,7 @@ private struct TodayTimelineView: View {
     }
 
     private var timelineAnimation: Animation? {
-        if reduceMotion {
-            return .easeOut(duration: 0.15)
-        }
+        if reduceMotion { return nil }
         return .spring(response: 0.4, dampingFraction: 1)
     }
 
@@ -663,7 +753,7 @@ private struct TodayTimelineView: View {
             )
         }
 
-        if animated {
+        if animated && !reduceMotion {
             withAnimation(.easeInOut(duration: 0.3)) {
                 action()
             }
@@ -750,7 +840,6 @@ private struct TimelineBlockCard: View {
     let timingResolver: (UUID) -> TimeBlockTiming?
     let onSelect: (UUID) -> Void
 
-    private let minimumHeight: CGFloat = 44
     private let childLeadingInset: CGFloat = 16
     private let childTrailingInset: CGFloat = 8
 
@@ -785,7 +874,7 @@ private struct TimelineBlockCard: View {
     }
 
     private var outerFrameHeight: CGFloat {
-        max(durationHeight, minimumHeight)
+        durationHeight
     }
 
     private var cardHeight: CGFloat {
@@ -805,12 +894,15 @@ private struct TimelineBlockCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(block.title)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("timeline-title-\(block.id.uuidString)")
 
                 Text(timeRangeText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .accessibilityIdentifier("timeline-time-\(block.id.uuidString)")
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -882,6 +974,7 @@ private struct TimelineBlockCard: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Shows block details")
         .accessibilityAddTraits(.isButton)
+        .accessibilitySortPriority(Double(24 * 60 - displayedStartMinuteOfDay))
         .accessibilityAction {
             onSelect(block.id)
         }
@@ -1031,7 +1124,7 @@ private struct TimelineOpenSlotEntry: View {
                     : Color(uiColor: .systemGroupedBackground)
             )
             .overlay(slotBorder)
-            .frame(height: max(slotHeight, 44))
+            .frame(height: slotHeight)
             .overlay(alignment: .topLeading) { slotLabel }
             .contentShape(slotShape)
             .onTapGesture(perform: onSelect)
@@ -1039,6 +1132,7 @@ private struct TimelineOpenSlotEntry: View {
             .accessibilityLabel(accessibilityText)
             .accessibilityHint("Shows open time details")
             .accessibilityAddTraits(.isButton)
+            .accessibilitySortPriority(Double(24 * 60 - slot.startMinuteOfDay))
             .accessibilityAction {
                 onSelect()
             }
@@ -1072,7 +1166,8 @@ private struct TimelineOpenSlotEntry: View {
 private struct TodayBlockInspectorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SamoyedStore.self) private var store
-    @State private var isEditing = false
+    @State private var feedbackContext: FeedbackSheetContext?
+    @State private var completionFeedbackTrigger = 0
 
     let date: LocalDay
     let detail: BlockDetailModel
@@ -1085,14 +1180,14 @@ private struct TodayBlockInspectorView: View {
                 header
             }
 
-            if detail.parentBlockTitle != nil {
+            if currentDetail.parentBlockTitle != nil {
                 Section {
                     parentButton
                 }
             }
 
             Section("Note") {
-                if let note = detail.note, !note.isEmpty {
+                if let note = currentDetail.note, !note.isEmpty {
                     Text(note)
                         .font(.body)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1103,13 +1198,16 @@ private struct TodayBlockInspectorView: View {
             }
 
             Section("Checklist") {
-                if detail.tasks.isEmpty {
+                if currentDetail.tasks.isEmpty {
                     Text("No checklist items")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(detail.tasks) { task in
+                    ForEach(currentDetail.tasks) { task in
                         Button {
                             onToggleTask(task.id)
+                            if !task.isCompleted {
+                                completionFeedbackTrigger += 1
+                            }
                         } label: {
                             HStack(alignment: .center, spacing: 10) {
                                 Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
@@ -1133,41 +1231,60 @@ private struct TodayBlockInspectorView: View {
             }
 
             Section("Reminders") {
-                if detail.reminders.isEmpty {
+                if currentDetail.reminders.isEmpty {
                     Text("No reminders")
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(detail.reminders) { reminder in
+                        ForEach(currentDetail.reminders) { reminder in
                             Label(reminderSummary(reminder), systemImage: "bell.badge")
                                 .font(.body)
                         }
                     }
                 }
             }
-        }
-        .navigationTitle(currentDetail.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button {
-                    dismiss()
-                } label: {
-                    Label("Close", systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                }
-            }
 
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Edit") {
-                    isEditing = true
+            Section {
+                Button {
+                    feedbackContext = FeedbackSheetContext(
+                        target: .block(blockID: currentDetail.id),
+                        targetTitle: currentDetail.title,
+                        targetDetail: "\(currentDetail.startMinuteOfDay.formattedTime) to \(currentDetail.endMinuteOfDay.formattedTime)",
+                        localDay: date,
+                        source: .blockDetails
+                    )
+                } label: {
+                    Label("Give Feedback on This Block", systemImage: "bubble.left")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .accessibilityIdentifier("today-edit")
+                .accessibilityIdentifier("block-details-feedback")
             }
         }
-        .sheet(isPresented: $isEditing) {
-            TodayBlockCorrectionEditorView(date: date, detail: currentDetail)
+        .navigationTitle("Block Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .presentationDetents([.fraction(0.68), .large])
+        .presentationDragIndicator(.visible)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") {
+                    dismiss()
+                }
+                .accessibilityIdentifier("block-details-done")
+            }
         }
+        .sheet(item: $feedbackContext) { context in
+            FeedbackSheet(context: context) { sentiment, note in
+                try store.saveFeedback(
+                    target: context.target,
+                    on: context.localDay,
+                    sentiment: sentiment,
+                    note: note,
+                    source: context.source
+                )
+            }
+        }
+        .sensoryFeedback(.success, trigger: completionFeedbackTrigger)
     }
 
     private var currentDetail: BlockDetailModel {
@@ -1176,11 +1293,11 @@ private struct TodayBlockInspectorView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(detail.title)
+            Text(currentDetail.title)
                 .font(.title3.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("\(detail.startMinuteOfDay.formattedTime) - \(detail.endMinuteOfDay.formattedTime)")
+            Text("\(currentDetail.startMinuteOfDay.formattedTime) - \(currentDetail.endMinuteOfDay.formattedTime)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -1197,7 +1314,7 @@ private struct TodayBlockInspectorView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    Text(detail.parentBlockTitle ?? "")
+                    Text(currentDetail.parentBlockTitle ?? "")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
@@ -1210,9 +1327,10 @@ private struct TodayBlockInspectorView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Parent block, \(detail.parentBlockTitle ?? "")")
+        .accessibilityLabel("Parent block, \(currentDetail.parentBlockTitle ?? "")")
     }
 
     private func reminderSummary(_ reminder: ReminderRule) -> String {
@@ -1225,104 +1343,6 @@ private struct TodayBlockInspectorView: View {
             return "At start"
         case .beforeStart:
             return "\(reminder.offsetMinutes) min before"
-        }
-    }
-}
-
-private struct TodayBlockCorrectionEditorView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(SamoyedStore.self) private var store
-
-    let date: LocalDay
-    let detail: BlockDetailModel
-
-    @State private var title: String
-    @State private var startMinuteOfDay: Int
-    @State private var endMinuteOfDay: Int
-    @State private var note: String
-    @State private var errorMessage: String?
-
-    init(date: LocalDay, detail: BlockDetailModel) {
-        self.date = date
-        self.detail = detail
-        _title = State(initialValue: detail.title)
-        _startMinuteOfDay = State(initialValue: detail.startMinuteOfDay)
-        _endMinuteOfDay = State(initialValue: detail.endMinuteOfDay)
-        _note = State(initialValue: detail.note ?? "")
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Block") {
-                    TextField("Title", text: $title)
-                        .accessibilityIdentifier("today-correction-title")
-
-                    TextField("Note (optional)", text: $note, axis: .vertical)
-                        .lineLimit(2 ... 6)
-                }
-
-                Section("Today only") {
-                    LabeledContent("Starts") {
-                        MinuteTimePicker(minuteOfDay: $startMinuteOfDay)
-                    }
-                    LabeledContent("Ends") {
-                        MinuteTimePicker(minuteOfDay: $endMinuteOfDay)
-                    }
-                    Text("This changes only \(date.titleText). Your saved day type is unchanged.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let errorMessage {
-                    Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Edit Today")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
-                        .disabled(!isValid)
-                        .accessibilityIdentifier("today-correction-save")
-                }
-            }
-        }
-        .onAppear {
-            store.recordValidationEvent(.todayCorrectionOpened, outcome: "opened")
-        }
-    }
-
-    private var isValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && startMinuteOfDay < endMinuteOfDay
-    }
-
-    private func save() {
-        do {
-            try store.applyTodayCorrection(
-                TodayBlockCorrection(
-                    blockID: detail.id,
-                    title: title,
-                    startMinuteOfDay: startMinuteOfDay,
-                    endMinuteOfDay: endMinuteOfDay,
-                    note: note,
-                    tasks: detail.tasks
-                ),
-                on: date
-            )
-            store.recordValidationEvent(.todayCorrectionCompleted, outcome: "saved")
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 }

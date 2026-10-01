@@ -170,6 +170,7 @@ struct TodayTemplateChooserView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(template.isCurrentForToday)
+            .accessibilityIdentifier("today-select-routine-\(template.id.uuidString)")
         }
         .padding(18)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))

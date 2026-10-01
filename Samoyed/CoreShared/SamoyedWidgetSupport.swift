@@ -33,6 +33,7 @@ struct SamoyedWidgetBlockItem: Identifiable, Equatable, Sendable {
     var title: String
     var layerIndex: Int
     var timeRangeText: String
+    var endMinuteOfDay: Int? = nil
     var isBlank: Bool
     var hasIncompleteTasks: Bool
     var isCurrent: Bool
@@ -42,13 +43,20 @@ struct SamoyedWidgetBlockItem: Identifiable, Equatable, Sendable {
     }
 }
 
+enum SamoyedWidgetState: String, Equatable, Sendable {
+    case active
+    case caughtUp
+    case needsSetup
+    case unavailable
+}
+
 // Widget 的完整快照。
 // 你可以把它理解为：“在某一时刻，Widget 需要拿到的全部只读数据包”。
 // 一旦快照构建完成，Widget 视图层只负责渲染，不再做业务推理。
 struct SamoyedWidgetSnapshot: Equatable, Sendable {
     var date: LocalDay
     var minuteOfDay: Int
-    var requiresTemplateSelection: Bool
+    var state: SamoyedWidgetState
     var currentBlockTitle: String?
     var currentBlockTimeRangeText: String?
     var currentBlockNote: String? = nil
@@ -57,13 +65,49 @@ struct SamoyedWidgetSnapshot: Equatable, Sendable {
     var tasks: [SamoyedWidgetTaskItem]
     var statusMessage: String?
 
+    static func needsSetup(
+        date: LocalDay,
+        minuteOfDay: Int,
+        message: String = "Choose today’s routine"
+    ) -> SamoyedWidgetSnapshot {
+        SamoyedWidgetSnapshot(
+            date: date,
+            minuteOfDay: minuteOfDay,
+            state: .needsSetup,
+            currentBlockTitle: nil,
+            currentBlockTimeRangeText: nil,
+            blocks: [],
+            remainingTaskCount: 0,
+            tasks: [],
+            statusMessage: message
+        )
+    }
+
+    static func unavailable(
+        date: LocalDay,
+        minuteOfDay: Int,
+        message: String
+    ) -> SamoyedWidgetSnapshot {
+        SamoyedWidgetSnapshot(
+            date: date,
+            minuteOfDay: minuteOfDay,
+            state: .unavailable,
+            currentBlockTitle: nil,
+            currentBlockTimeRangeText: nil,
+            blocks: [],
+            remainingTaskCount: 0,
+            tasks: [],
+            statusMessage: message
+        )
+    }
+
     static func placeholder() -> SamoyedWidgetSnapshot {
         // `placeholder` 是 WidgetKit 的占位内容：
         // 在系统还没拿到真实数据、或在配置页/预览页里，会先显示这份假数据。
         SamoyedWidgetSnapshot(
             date: LocalDay.today(),
             minuteOfDay: Date.now.minuteOfDay,
-            requiresTemplateSelection: false,
+            state: .active,
             currentBlockTitle: "Now",
             currentBlockTimeRangeText: "09:00 - 10:30",
             currentBlockNote: "Finish the review while the decisions are fresh.",
@@ -127,16 +171,10 @@ enum SamoyedWidgetSnapshotBuilder {
         maxTaskCount: Int
     ) -> SamoyedWidgetSnapshot {
         if now.focusState == .noRoutine, !now.activeChain.contains(where: { !$0.isBlank }) {
-            return SamoyedWidgetSnapshot(
+            return .needsSetup(
                 date: now.date,
                 minuteOfDay: now.minuteOfDay,
-                requiresTemplateSelection: false,
-                currentBlockTitle: nil,
-                currentBlockTimeRangeText: nil,
-                blocks: [],
-                remainingTaskCount: 0,
-                tasks: [],
-                statusMessage: "No routine today"
+                message: "Choose a routine to bring Now into focus."
             )
         }
 
@@ -150,6 +188,7 @@ enum SamoyedWidgetSnapshotBuilder {
                     startMinuteOfDay: item.startMinuteOfDay,
                     endMinuteOfDay: item.endMinuteOfDay
                 ),
+                endMinuteOfDay: item.endMinuteOfDay,
                 isBlank: item.isBlank,
                 hasIncompleteTasks: item.hasIncompleteTasks,
                 isCurrent: item.isCurrent
@@ -164,7 +203,9 @@ enum SamoyedWidgetSnapshotBuilder {
         let prioritizedSections = prioritizedTaskSections(from: now.taskSections)
         let tasks = prioritizedSections
             .flatMap { section in
-                prioritizedTasks(from: section).map { task in
+                prioritizedTasks(from: section)
+                    .filter { !$0.isCompleted }
+                    .map { task in
                     SamoyedWidgetTaskItem(
                         dateISO: now.date.description,
                         blockID: section.id.uuidString,
@@ -176,23 +217,35 @@ enum SamoyedWidgetSnapshotBuilder {
                         isCompleted: task.isCompleted,
                         isCurrentBlock: section.isCurrent
                     )
-                }
+                    }
             }
+
+        let remainingTaskCount = now.taskSections
+            .flatMap(\.tasks)
+            .filter { !$0.isCompleted }
+            .count
+        let state: SamoyedWidgetState
+        if remainingTaskCount > 0 {
+            state = .active
+        } else if let currentBlock, !currentBlock.isBlank {
+            state = .caughtUp
+        } else {
+            state = .unavailable
+        }
 
         return SamoyedWidgetSnapshot(
             date: now.date,
             minuteOfDay: now.minuteOfDay,
-            requiresTemplateSelection: false,
+            state: state,
             currentBlockTitle: currentBlock?.title,
             currentBlockTimeRangeText: currentBlock?.timeRangeText,
             currentBlockNote: currentBlockNote,
             blocks: blocks,
-            remainingTaskCount: now.taskSections
-                .flatMap(\.tasks)
-                .filter { !$0.isCompleted }
-                .count,
+            remainingTaskCount: remainingTaskCount,
             tasks: Array(tasks.prefix(max(0, maxTaskCount))),
-            statusMessage: tasks.isEmpty ? now.statusMessage : nil
+            statusMessage: state == .unavailable
+                ? (now.statusMessage ?? "Nothing is active right now.")
+                : nil
         )
     }
 
@@ -206,8 +259,8 @@ enum SamoyedWidgetSnapshotBuilder {
         let fallback = referenceDate.addingTimeInterval(15 * 60)
 
         guard
-            let currentBlockTimeRangeText = snapshot.currentBlockTimeRangeText,
-            let endMinuteOfDay = endMinuteOfDay(from: currentBlockTimeRangeText),
+            let currentBlock = snapshot.blocks.first(where: \.isCurrent) ?? snapshot.blocks.first,
+            let endMinuteOfDay = currentBlock.endMinuteOfDay,
             let boundary = snapshot.date.date(minuteOfDay: endMinuteOfDay)
         else {
             return fallback
@@ -258,26 +311,6 @@ enum SamoyedWidgetSnapshotBuilder {
         return String(format: "%02d:%02d", hour, minute)
     }
 
-    private static func endMinuteOfDay(from timeRange: String) -> Int? {
-        // 这里反向解析时间字符串只为了估算下一次刷新时间。
-        // 更理想的长期方案通常是直接在 snapshot 里保存 end minute，
-        // 但当前设计里用已有展示文案就够了。
-        let pieces = timeRange.components(separatedBy: " - ")
-        guard pieces.count == 2 else {
-            return nil
-        }
-
-        let endPieces = pieces[1].split(separator: ":")
-        guard
-            endPieces.count == 2,
-            let hour = Int(endPieces[0]),
-            let minute = Int(endPieces[1])
-        else {
-            return nil
-        }
-
-        return hour * 60 + minute
-    }
 }
 
 extension SamoyedDocumentRepository {
@@ -286,27 +319,13 @@ extension SamoyedDocumentRepository {
         maxTaskCount: Int
     ) throws -> SamoyedWidgetSnapshot {
         let localDay = LocalDay(date: date)
-        let document = try preparedDocument(at: date)
-
-        if try TemplateEngine.requiresExplicitTemplateSelection(
-            for: localDay,
-            today: localDay,
-            existingDayPlans: document.dayPlans,
-            daySelections: document.daySelections
-        ) {
-            return SamoyedWidgetSnapshot(
-                date: localDay,
-                minuteOfDay: date.minuteOfDay,
-                requiresTemplateSelection: true,
-                currentBlockTitle: nil,
-                currentBlockTimeRangeText: nil,
-                currentBlockNote: nil,
-                blocks: [],
-                remainingTaskCount: 0,
-                tasks: [],
-                statusMessage: "Choose today’s routine"
-            )
+        guard let persistedDocument = try load() else {
+            return .needsSetup(date: localDay, minuteOfDay: date.minuteOfDay)
         }
+        if persistedDocument.isEmptyForActivation {
+            return .needsSetup(date: localDay, minuteOfDay: date.minuteOfDay)
+        }
+        let document = try preparedDocument(at: date)
 
         // repository 先提供“准备好的 now screen model”，
         // 再由 builder 生成 widget 快照。

@@ -2,6 +2,9 @@ import SwiftUI
 
 enum LibraryDestination: Hashable {
     case routines
+    case usualWeek
+    case suggestions
+    case planner
     case appearance
     case routineFiles
 }
@@ -38,17 +41,32 @@ struct LibraryRootView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        RoutineEditorView(mode: .create)
+                    Menu {
+                        NavigationLink(value: LibraryDestination.appearance) {
+                            Label("Appearance", systemImage: "paintpalette")
+                        }
+                        NavigationLink(value: LibraryDestination.routineFiles) {
+                            Label("Routine Files", systemImage: "arrow.up.arrow.down")
+                        }
+                        NavigationLink(value: LibraryDestination.planner) {
+                            Label("About Planner", systemImage: "sparkles")
+                        }
                     } label: {
-                        Label("New Routine", systemImage: "plus")
+                        Label("More", systemImage: "ellipsis.circle")
                     }
+                    .accessibilityIdentifier("library-more")
                 }
             }
             .navigationDestination(for: LibraryDestination.self) { destination in
                 switch destination {
                 case .routines:
                     RoutinesRootView()
+                case .usualWeek:
+                    UsualWeekView()
+                case .suggestions:
+                    SuggestionsInboxView()
+                case .planner:
+                    PlannerView()
                 case .appearance:
                     LibraryAppearanceView()
                 case .routineFiles:
@@ -66,20 +84,20 @@ private struct LibraryContent: View {
 
     var body: some View {
         List {
-            Section {
-                Text("Choose, preview, and reuse routines.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
-            }
+            Text("Choose routines, review suggestions, and keep your day running.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
 
             if model.savedTemplates.isEmpty {
                 Section {
                     ContentUnavailableView {
                         Label("No Routines", systemImage: "square.and.arrow.down")
                     } description: {
-                        Text("Create a reusable routine or import a Routine Config File.")
+                        Text("Import a Routine Config File or create one with ChatGPT.")
                     } actions: {
                         Button {
                             store.libraryNavigationPath.append(.routineFiles)
@@ -93,6 +111,7 @@ private struct LibraryContent: View {
                 .listRowBackground(Color.clear)
             } else {
                 todaySection
+                suggestionsSection
                 routinesSection
                 toolsSection
             }
@@ -107,12 +126,14 @@ private struct LibraryContent: View {
                 NavigationLink {
                     RoutineDetailView(routineID: current.id)
                 } label: {
-                    LibraryRoutineRow(
-                        routine: current,
-                        subtitle: "Running",
-                        showsSelection: true
+                    LibrarySummaryRow(
+                        title: current.title,
+                        subtitle: ["Running", current.timeRangeText, "\(current.totalBlockCount) blocks"]
+                            .compactMap { $0 }.joined(separator: " · "),
+                        status: "RUNNING"
                     )
                 }
+                .accessibilityIdentifier("library-current-routine")
             } else {
                 NavigationLink(value: LibraryDestination.routines) {
                     Label("Choose Today’s Routine", systemImage: "calendar.badge.exclamationmark")
@@ -122,69 +143,102 @@ private struct LibraryContent: View {
     }
 
     @ViewBuilder
-    private var routinesSection: some View {
-        Section("Routines") {
-            ForEach(model.savedTemplates.filter { !$0.isCurrentForToday }.prefix(3)) { routine in
-                NavigationLink {
-                    RoutineDetailView(routineID: routine.id)
-                } label: {
-                    LibraryRoutineRow(
-                        routine: routine,
-                        subtitle: routine.timeRangeText ?? "Reusable routine",
-                        showsSelection: false
+    private var suggestionsSection: some View {
+        let pending = store.document.suggestions.filter { $0.lifecycleState == .pending }
+        let changeCount = pending.reduce(0) { $0 + $1.changes.count }
+        if !pending.isEmpty {
+            Section("Suggestions") {
+                NavigationLink(value: LibraryDestination.suggestions) {
+                    LibrarySummaryRow(
+                        title: pending.contains(where: { $0.kind == .dailyPlan })
+                            ? "Tomorrow’s Plan" : "Routine Improvements",
+                        subtitle: changeCount == 0 ? "Ready to review"
+                            : "\(changeCount) changes · Ready to review",
+                        status: "READY"
                     )
                 }
+                .accessibilityIdentifier("library-suggestions")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var routinesSection: some View {
+        Section("Routines") {
+            NavigationLink(value: LibraryDestination.routines) {
+                LibrarySummaryRow(
+                    title: "All Routines",
+                    subtitle: model.savedTemplates.count == 1
+                        ? "1 reusable routine" : "\(model.savedTemplates.count) reusable routines"
+                )
             }
 
-            NavigationLink(value: LibraryDestination.routines) {
-                Label("All Routines", systemImage: "square.stack.3d.up")
+            NavigationLink(value: LibraryDestination.usualWeek) {
+                LibrarySummaryRow(title: "Usual Week", subtitle: usualWeekSummary)
             }
         }
     }
 
     @ViewBuilder
     private var toolsSection: some View {
-        Section("Library Tools") {
-            NavigationLink(value: LibraryDestination.appearance) {
-                Label("Appearance", systemImage: "paintpalette")
+        Section("Planner & Files") {
+            NavigationLink(value: LibraryDestination.planner) {
+                LibrarySummaryRow(title: "Planner", subtitle: plannerStatusText)
             }
-
+            .accessibilityIdentifier("library-planner")
             NavigationLink(value: LibraryDestination.routineFiles) {
-                Label("Routine Files", systemImage: "arrow.up.arrow.down")
+                LibrarySummaryRow(title: "Routine Files", subtitle: "Import and export definitions")
             }
+        }
+    }
+
+    private var plannerStatusText: String {
+        switch store.document.plannerSettings.connectionState {
+        case .disconnected: "Not Connected"
+        case .connected: "Connected"
+        case .unavailable: "Unavailable · routines continue locally"
+        case .needsAttention: "Needs Attention"
+        }
+    }
+
+    private var usualWeekSummary: String {
+        let count = Set(model.savedTemplates.flatMap(\.assignedWeekdays)).count
+        switch count {
+        case 0: return "No default routines"
+        case 7: return "Configured · Mon–Sun"
+        default: return "Configured · \(count) of 7 days"
         }
     }
 }
 
-private struct LibraryRoutineRow: View {
-    let routine: TemplateCandidateSummary
+private struct LibrarySummaryRow: View {
+    let title: String
     let subtitle: String
-    let showsSelection: Bool
+    var status: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "square.stack.3d.up")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 26)
-
             VStack(alignment: .leading, spacing: 3) {
-                Text(routine.title)
+                Text(title)
                     .font(.body)
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
 
-            if showsSelection {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.tint)
-                    .accessibilityLabel("Selected for today")
+            if let status {
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(status == "READY" ? Color.orange : Color.secondary)
+                    .fixedSize()
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue([subtitle, status].compactMap { $0 }.joined(separator: ", "))
     }
 }
 
@@ -204,6 +258,7 @@ struct LibraryAppearanceView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("appearance-\(preset.rawValue)")
                     .accessibilityAddTraits(store.tintPreset == preset ? [.isSelected] : [])
                 }
             }
