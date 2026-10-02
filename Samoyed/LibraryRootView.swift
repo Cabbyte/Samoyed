@@ -7,6 +7,7 @@ enum LibraryDestination: Hashable {
     case planner
     case appearance
     case routineFiles
+    case nest
 }
 
 struct LibraryRootView: View {
@@ -48,20 +49,10 @@ struct LibraryRootView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        NavigationLink(value: LibraryDestination.appearance) {
-                            Label("Appearance", systemImage: "paintpalette")
-                        }
-                        NavigationLink(value: LibraryDestination.routineFiles) {
-                            Label("Routine Files", systemImage: "arrow.up.arrow.down")
-                        }
-                        NavigationLink(value: LibraryDestination.planner) {
-                            Label("About Planner", systemImage: "sparkles")
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
+                    NavigationLink(value: LibraryDestination.routineFiles) {
+                        Label("Add Routine", systemImage: "plus")
                     }
-                    .accessibilityIdentifier("library-more")
+                    .accessibilityIdentifier("library-add-routine")
                 }
             }
             .navigationDestination(for: LibraryDestination.self) { destination in
@@ -78,6 +69,8 @@ struct LibraryRootView: View {
                     LibraryAppearanceView()
                 case .routineFiles:
                     LibraryImportExportView()
+                case .nest:
+                    NestAccountView()
                 }
             }
         }
@@ -91,18 +84,19 @@ private struct LibraryContent: View {
 
     var body: some View {
         List {
-            Text("Choose routines, review suggestions, and keep your day running.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-
             Section {
-                NavigationLink { NestAccountView() } label: {
-                    Label("Samoyed Nest · \(store.nest.status)", systemImage: "person.crop.circle")
+                Button {
+                    store.libraryNavigationPath.append(.nest)
+                } label: {
+                    HStack(spacing: 8) {
+                        NestSyncSummary(nest: store.nest)
+                        Image("NestChevron")
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("library-nest")
             }
 
             if model.savedTemplates.isEmpty {
@@ -126,24 +120,29 @@ private struct LibraryContent: View {
                 todaySection
                 suggestionsSection
                 routinesSection
-                toolsSection
             }
+            toolsSection
         }
         .listStyle(.insetGrouped)
+        .listSectionSpacing(20)
+        .contentMargins(.horizontal, 16, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: .systemBackground))
+        .environment(\.defaultMinListRowHeight, 48)
     }
 
     @ViewBuilder
     private var todaySection: some View {
-        Section("Today") {
+        Section {
             if let current = model.todayChooser.currentSelection {
                 NavigationLink {
                     RoutineDetailView(routineID: current.id)
                 } label: {
                     LibrarySummaryRow(
                         title: current.title,
-                        subtitle: ["Running", current.timeRangeText, "\(current.totalBlockCount) blocks"]
-                            .compactMap { $0 }.joined(separator: " · "),
-                        status: "RUNNING"
+                        subtitle: "Running",
+                        status: "RUNNING",
+                        systemImage: "square.stack.3d.up"
                     )
                 }
                 .accessibilityIdentifier("library-current-routine")
@@ -152,7 +151,7 @@ private struct LibraryContent: View {
                     Label("Choose Today’s Routine", systemImage: "calendar.badge.exclamationmark")
                 }
             }
-        }
+        } header: { sectionTitle("Today") }
     }
 
     @ViewBuilder
@@ -177,32 +176,45 @@ private struct LibraryContent: View {
 
     @ViewBuilder
     private var routinesSection: some View {
-        Section("Routines") {
+        Section {
+            ForEach(model.savedTemplates.prefix(2)) { routine in
+                NavigationLink {
+                    RoutineDetailView(routineID: routine.id)
+                } label: {
+                    LibrarySummaryRow(
+                        title: routine.title,
+                        subtitle: routine.timeRangeText ?? "No scheduled blocks",
+                        systemImage: "square.stack.3d.up"
+                    )
+                }
+            }
             NavigationLink(value: LibraryDestination.routines) {
-                LibrarySummaryRow(
-                    title: "All Routines",
-                    subtitle: model.savedTemplates.count == 1
-                        ? "1 reusable routine" : "\(model.savedTemplates.count) reusable routines"
-                )
+                Label("All Routines", systemImage: "square.stack.3d.up")
             }
-
-            NavigationLink(value: LibraryDestination.usualWeek) {
-                LibrarySummaryRow(title: "Usual Week", subtitle: usualWeekSummary)
-            }
-        }
+        } header: { sectionTitle("Routines") }
     }
 
-    @ViewBuilder
     private var toolsSection: some View {
-        Section("Planner & Files") {
+        Section {
+            NavigationLink(value: LibraryDestination.appearance) {
+                Label { Text("Appearance") } icon: { Image("LibraryPalette") }
+            }
+            .accessibilityIdentifier("library-appearance")
+            NavigationLink(value: LibraryDestination.routineFiles) {
+                Label { Text("Routine Files") } icon: { Image("LibraryFiles") }
+            }
+            NavigationLink(value: LibraryDestination.usualWeek) {
+                LibrarySummaryRow(title: "Usual Week", subtitle: usualWeekSummary, systemImage: "calendar")
+            }
             NavigationLink(value: LibraryDestination.planner) {
-                LibrarySummaryRow(title: "Planner", subtitle: plannerStatusText)
+                LibrarySummaryRow(title: "Planner", subtitle: plannerStatusText, systemImage: "sparkles")
             }
             .accessibilityIdentifier("library-planner")
-            NavigationLink(value: LibraryDestination.routineFiles) {
-                LibrarySummaryRow(title: "Routine Files", subtitle: "Import and export definitions")
-            }
-        }
+        } header: { sectionTitle("Library Tools") }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title).font(.headline).foregroundStyle(Color(uiColor: .secondaryLabel)).textCase(nil)
     }
 
     private var plannerStatusText: String {
@@ -228,12 +240,20 @@ private struct LibrarySummaryRow: View {
     let title: String
     let subtitle: String
     var status: String? = nil
+    var systemImage: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body)
+                    .font(.body.weight(.semibold))
                 Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -242,7 +262,11 @@ private struct LibrarySummaryRow: View {
 
             Spacer(minLength: 8)
 
-            if let status {
+            if status == "RUNNING" {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+            } else if let status {
                 Text(status)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(status == "READY" ? Color.orange : Color.secondary)

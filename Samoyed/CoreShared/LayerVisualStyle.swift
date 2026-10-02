@@ -119,6 +119,14 @@ struct LayerVisualStyle {
     let badgeBackground: Color
     let badgeForeground: Color
 
+    // The solid accent circle needs the opposite contrast from a subtle badge.
+    var accentForeground: Color {
+        .adaptive(
+            light: RGBColor(red: 255, green: 255, blue: 255),
+            dark: RGBColor(red: 22, green: 26, blue: 33)
+        )
+    }
+
     static func forBlock(
         layerIndex: Int,
         isBlank: Bool,

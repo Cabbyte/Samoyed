@@ -363,6 +363,38 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(model.savedTemplates.first(where: { $0.id == pickedTemplate.id })?.isCurrentForToday == true)
     }
 
+    func testTemplateChooserUsesRetainedPlanSourceAfterDateSelectionChanges() throws {
+        let date = LocalDay(year: 2026, month: 10, day: 1)
+        let original = SavedDayTemplate(title: "Workday", blocks: [])
+        let laterChoice = SavedDayTemplate(title: "Mock Workday", blocks: [])
+        let document = SamoyedDocument(
+            dayPlans: [DayPlan(date: date, sourceSavedTemplateID: original.id, hasUserEdits: true)],
+            savedTemplates: [original, laterChoice],
+            daySelections: [.init(date: date, selectedTemplateID: laterChoice.id, source: .pickedTemplate)]
+        )
+
+        let model = try SamoyedPresentation.templatesScreenModel(document: document, referenceDay: date)
+
+        XCTAssertEqual(model.todayChooser.currentSelection?.id, original.id)
+        XCTAssertTrue(model.savedTemplates.first { $0.id == original.id }!.isCurrentForToday)
+        XCTAssertFalse(model.savedTemplates.first { $0.id == laterChoice.id }!.isCurrentForToday)
+    }
+
+    func testTemplateChooserDoesNotApplyPendingSelectionToUnsourcedPlan() throws {
+        let date = LocalDay(year: 2026, month: 10, day: 1)
+        let pending = SavedDayTemplate(title: "Pending Routine", blocks: [])
+        let document = SamoyedDocument(
+            dayPlans: [DayPlan(date: date)],
+            savedTemplates: [pending],
+            daySelections: [.init(date: date, selectedTemplateID: pending.id, source: .pickedTemplate)]
+        )
+
+        let model = try SamoyedPresentation.templatesScreenModel(document: document, referenceDay: date)
+
+        XCTAssertNil(model.todayChooser.currentSelection)
+        XCTAssertFalse(model.savedTemplates[0].isCurrentForToday)
+    }
+
     func testTemplatesScreenModelKeepsChooserAvailableForExplicitNoTemplateDay() throws {
         let referenceDay = LocalDay(year: 2026, month: 3, day: 19)
         let defaultTemplate = SavedDayTemplate(

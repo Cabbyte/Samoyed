@@ -26,10 +26,33 @@ final class NestAccountController: NSObject, ASWebAuthenticationPresentationCont
     private var restored = false
     private var sessionID = UUID()
     var connected: Bool { user != nil && !needsImportChoice }
+    var isSyncing: Bool { syncTask != nil }
 
     func restore(store: SamoyedStore) async {
         self.store = store
         guard !restored else { return }; restored = true
+        #if DEBUG
+        // UI fixtures never restore credentials or contact the production account.
+        if ProcessInfo.processInfo.environment["SAMOYED_UI_TEST_FIXTURE"] != nil {
+            if let state = ProcessInfo.processInfo.environment["SAMOYED_QA_NEST_STATE"] {
+                origin = URL(string: "https://samoyed.protium.top")
+                user = NestCloudUser(id: "qa-account-a9dc423a-68ace", timeZoneID: "Asia/Shanghai", timeZoneConfirmed: true)
+                lastSyncedAt = .now
+                status = "已同步"
+                if state == "conflict" {
+                    blockedOperations = 2
+                    status = "有 2 项修改需要处理"
+                    errorMessage = "部分修改需要处理，未上传的资料保留在本机。"
+                } else if state == "import" {
+                    needsImportChoice = true
+                    status = "选择首次同步方式"
+                    importSummary = "本机有 2 个 Routine、3 条 Note。"
+                    lastSyncedAt = nil
+                }
+            }
+            return
+        }
+        #endif
         do {
             guard let c = try NestKeychain.load(), let user = c.user else { return }
             try c.capabilities.validate(origin: c.origin)

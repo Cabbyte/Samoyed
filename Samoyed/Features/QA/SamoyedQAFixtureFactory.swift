@@ -110,6 +110,35 @@ enum SamoyedQAFixtureFactory {
             }
             return document
 
+        case "timeline-notes":
+            var document = document(named: "coincident-starts", today: today)!
+            let yesterday = today.adding(days: -1)
+            var historicalPlan = try! TemplateEngine.instantiateDayPlan(from: recoveryRoutine(), for: yesterday)
+            historicalPlan.hasUserEdits = true
+            document.dayPlans.append(historicalPlan)
+            // A newer date choice must not relabel the retained historical snapshot.
+            document.daySelections.append(.init(
+                date: yesterday, selectedTemplateID: workdayRoutineID, source: .pickedTemplate
+            ))
+            let midnight = TimeBlock(
+                layerIndex: 0, title: "End of Day",
+                timing: .absolute(startMinuteOfDay: 1425, requestedEndMinuteOfDay: 1440)
+            )
+            document.dayPlans[0].blocks.append(midnight)
+            document.dayPlans[0] = resolved(document.dayPlans[0])
+            let longText = "Mock · 长文本排版测试 🐶\n" + String(repeating:
+                "这条 Note 用于观察中文、English / API / MCP 混排。它不占用日程时长，也不改变 Checklist。\n", count: 12
+            ) + "FULL NOTE END"
+            document.timelineNotes = [432, 585, 825, 1335].enumerated().map { index, minute in
+                TimelineNote(
+                    id: uuid("70000000-0000-0000-0000-00000000000\(index + 1)"),
+                    text: longText,
+                    occurredAt: today.date(minuteOfDay: minute)!,
+                    source: "qa"
+                )
+            }
+            return document
+
         case "long-title":
             var document = frozenRuntimeDocument(today: today)
             let title = "Project work and thoughtful planning"

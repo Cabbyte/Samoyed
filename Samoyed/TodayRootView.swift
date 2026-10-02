@@ -132,7 +132,7 @@ struct TodayRootView: View {
                 }
             }
 
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItemGroup(placement: .topBarLeading) {
                 Button {
                     preserveTimelinePosition(model: model, currentMinute: currentMinute)
                     store.moveSelectedDate(by: -1)
@@ -141,23 +141,6 @@ struct TodayRootView: View {
                         .labelStyle(.iconOnly)
                 }
                 .accessibilityLabel("Previous Day")
-            }
-
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if store.selectedDate == .today() {
-                    Button {
-                        jumpToCurrent()
-                    } label: {
-                        Label("Jump to Now", systemImage: "location")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Jump to current time")
-                } else {
-                    Button("Today") {
-                        store.selectDate(.today())
-                    }
-                    .accessibilityLabel("Go to Today")
-                }
 
                 Button {
                     preserveTimelinePosition(model: model, currentMinute: currentMinute)
@@ -167,6 +150,18 @@ struct TodayRootView: View {
                         .labelStyle(.iconOnly)
                 }
                 .accessibilityLabel("Next Day")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Today") {
+                    dateNavigationScrollMinute = nil
+                    if store.selectedDate != .today() {
+                        store.selectDate(.today())
+                    }
+                    jumpToCurrent()
+                }
+                .accessibilityLabel(store.selectedDate == .today() ? "Jump to current time" : "Go to Today")
+                .accessibilityIdentifier("today-jump-to-now")
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: selection)
@@ -271,11 +266,7 @@ struct TodayRootView: View {
     }
 
     private func jumpToCurrent() {
-        let blockID = store.currentActiveBlockID(
-            currentDate: SamoyedSimulationClock.adjusted(.now)
-        )
-        store.selectBlock(blockID)
-        selection = blockID.map { .block(id: $0) }
+        clearSelection()
         jumpToCurrentTrigger += 1
     }
 
@@ -475,6 +466,10 @@ private struct TodayTimelineView: View {
                 currentMinute: currentMinute,
                 selectedBlockID: selectedBlockID,
                 selectedOpenSlotID: selectedOpenSlotID,
+                dateNavigationScrollMinute: dateNavigationScrollMinute,
+                jumpToCurrentTrigger: jumpToCurrentTrigger,
+                scrollToBlockID: scrollToBlockID,
+                scrollToBlockTrigger: scrollToBlockTrigger,
                 onSelectBlock: onSelectBlock,
                 onSelectOpenSlot: onSelectOpenSlot
             )

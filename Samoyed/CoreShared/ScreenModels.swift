@@ -445,8 +445,14 @@ public enum SamoyedPresentation {
         let defaultTemplateID = document.weekdayRules
             .first(where: { $0.weekday == referenceDay.weekday })?
             .savedTemplateID
-        let currentTemplateID = document.daySelection(for: referenceDay)?.selectedTemplateID
-            ?? document.dayPlan(for: referenceDay)?.sourceSavedTemplateID
+        // A date rule may change while its executed plan keeps the original snapshot.
+        // Describe the plan that Today actually displays, including an unsourced plan.
+        let currentTemplateID: UUID?
+        if let plan = document.dayPlan(for: referenceDay) {
+            currentTemplateID = plan.sourceSavedTemplateID
+        } else {
+            currentTemplateID = document.daySelection(for: referenceDay)?.selectedTemplateID
+        }
 
         let saved: [TemplateCandidateSummary] = try document.savedTemplates.map { template in
             let metrics = try templateMetrics(for: template.blocks)

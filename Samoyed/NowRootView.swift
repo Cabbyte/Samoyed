@@ -308,7 +308,7 @@ private struct NowBlockCard: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: symbol)
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(isFront ? style.badgeForeground : Color.secondary)
+                .foregroundStyle(isFront ? style.accentForeground : Color.secondary)
                 .frame(width: 52, height: 52)
                 .background(
                     isFront ? style.accent : Color(uiColor: .tertiarySystemFill),

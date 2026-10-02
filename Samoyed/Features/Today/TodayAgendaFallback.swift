@@ -1,82 +1,160 @@
 import SwiftUI
 
 struct TodayAgendaFallback: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let model: TodayScreenModel
     let notes: [TimelineNote]
     let onSelectNote: (TimelineNote) -> Void
     let currentMinute: Int?
     let selectedBlockID: UUID?
     let selectedOpenSlotID: UUID?
+    let dateNavigationScrollMinute: Int?
+    let jumpToCurrentTrigger: Int
+    let scrollToBlockID: UUID?
+    let scrollToBlockTrigger: Int
     let onSelectBlock: (UUID) -> Void
     let onSelectOpenSlot: (UUID) -> Void
+
+    @State private var lastInitialScrollDate: LocalDay?
 
     private var entries: [TodayAgendaEntry] {
         let blocks = model.blocks.map(TodayAgendaEntry.block)
         let openSlots = model.openSlots.map(TodayAgendaEntry.openSlot)
-        return (blocks + openSlots).sorted {
+        let noteEntries = notes.map(TodayAgendaEntry.note)
+        return (blocks + openSlots + noteEntries).sorted {
             if $0.startMinuteOfDay != $1.startMinuteOfDay {
                 return $0.startMinuteOfDay < $1.startMinuteOfDay
             }
-            return $0.sortDepth < $1.sortDepth
+            if $0.sortDepth != $1.sortDepth {
+                return $0.sortDepth < $1.sortDepth
+            }
+            return $0.id < $1.id
         }
     }
 
     var body: some View {
-        List {
-            if !notes.isEmpty {
-                Section("Notes") {
-                    ForEach(notes) { note in
-                        Button { onSelectNote(note) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(note.occurredAt, style: .time)
-                                    .font(.caption).foregroundStyle(.secondary)
-                                Text(note.text).foregroundStyle(.primary)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    ForEach(entries) { entry in
+                        Button {
+                            switch entry {
+                            case let .block(block): onSelectBlock(block.id)
+                            case let .openSlot(slot): onSelectOpenSlot(slot.id)
+                            case let .note(note): onSelectNote(note)
+                            }
+                        } label: {
+                            if case let .note(note) = entry {
+                                TodayAgendaNoteRow(note: note)
+                            } else {
+                                TodayAgendaRow(
+                                    entry: entry,
+                                    isCurrent: entry.contains(minute: currentMinute),
+                                    isSelected: entry.isSelected(
+                                        blockID: selectedBlockID,
+                                        openSlotID: selectedOpenSlotID
+                                    )
+                                )
                             }
                         }
-                        .accessibilityIdentifier("timeline-note-\(note.id.uuidString)")
+                        .buttonStyle(.plain)
+                        .id(entry.id)
+                        .accessibilityIdentifier("timeline-\(entry.id)")
                     }
+                } header: {
+                    Text("Timeline")
+                } footer: {
+                    Text("Shown as an agenda so every title and time remains readable.")
                 }
             }
-            Section {
-                ForEach(entries) { entry in
-                    Button {
-                        switch entry {
-                        case let .block(block):
-                            onSelectBlock(block.id)
-                        case let .openSlot(slot):
-                            onSelectOpenSlot(slot.id)
-                        }
-                    } label: {
-                        TodayAgendaRow(
-                            entry: entry,
-                            isCurrent: entry.contains(minute: currentMinute),
-                            isSelected: entry.isSelected(
-                                blockID: selectedBlockID,
-                                openSlotID: selectedOpenSlotID
-                            )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            } header: {
-                Text("Timeline")
-            } footer: {
-                Text("Shown as an agenda so every title and time remains readable.")
+            .listStyle(.insetGrouped)
+            .accessibilityIdentifier("today-accessibility-agenda")
+            .task(id: model.date) {
+                guard lastInitialScrollDate != model.date else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                lastInitialScrollDate = model.date
+                scroll(
+                    to: dateNavigationScrollMinute ?? currentMinute ?? model.initialScrollMinute,
+                    proxy: proxy,
+                    animated: false
+                )
+            }
+            .onChange(of: jumpToCurrentTrigger) { _, _ in
+                guard let currentMinute else { return }
+                scroll(to: currentMinute, proxy: proxy, animated: true)
+            }
+            .onChange(of: scrollToBlockTrigger) { _, _ in
+                guard let scrollToBlockID else { return }
+                scroll(toID: "block-\(scrollToBlockID.uuidString)", proxy: proxy, animated: true)
             }
         }
-        .listStyle(.insetGrouped)
-        .accessibilityIdentifier("today-accessibility-agenda")
+    }
+
+    private func scroll(to minute: Int, proxy: ScrollViewProxy, animated: Bool) {
+        let target = entries.filter { $0.contains(minute: minute) }
+            .max { $0.sortDepth < $1.sortDepth }
+            ?? entries.first { $0.startMinuteOfDay >= minute }
+            ?? entries.last
+        guard let target else { return }
+        scroll(toID: target.id, proxy: proxy, animated: animated)
+    }
+
+    private func scroll(toID id: String, proxy: ScrollViewProxy, animated: Bool) {
+        if animated && !reduceMotion {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(id, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(id, anchor: .center)
+        }
+    }
+}
+
+private struct TodayAgendaNoteRow: View {
+    let note: TimelineNote
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "text.bubble")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Note")
+                    Text(note.occurredAt, style: .time)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Text(note.text)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the full note")
     }
 }
 
 private enum TodayAgendaEntry: Identifiable {
     case block(TimelineBlockItem)
     case openSlot(TodayOpenSlotItem)
+    case note(TimelineNote)
 
     var id: String {
         switch self {
         case let .block(block): "block-\(block.id.uuidString)"
         case let .openSlot(slot): "open-slot-\(slot.id.uuidString)"
+        case let .note(note): "note-\(note.id.uuidString)"
         }
     }
 
@@ -84,6 +162,7 @@ private enum TodayAgendaEntry: Identifiable {
         switch self {
         case let .block(block): block.startMinuteOfDay
         case let .openSlot(slot): slot.startMinuteOfDay
+        case let .note(note): note.occurredAt.minuteOfDay
         }
     }
 
@@ -91,6 +170,7 @@ private enum TodayAgendaEntry: Identifiable {
         switch self {
         case let .block(block): block.endMinuteOfDay
         case let .openSlot(slot): slot.endMinuteOfDay
+        case let .note(note): note.occurredAt.minuteOfDay
         }
     }
 
@@ -98,6 +178,7 @@ private enum TodayAgendaEntry: Identifiable {
         switch self {
         case let .block(block): block.layerIndex
         case .openSlot: -1
+        case .note: Int.max
         }
     }
 
@@ -110,6 +191,7 @@ private enum TodayAgendaEntry: Identifiable {
         switch self {
         case let .block(block): block.id == blockID
         case let .openSlot(slot): slot.id == openSlotID
+        case .note: false
         }
     }
 }
@@ -182,6 +264,7 @@ private struct TodayAgendaRow: View {
         switch entry {
         case let .block(block): block.title
         case .openSlot: "Open Time"
+        case .note: "Note"
         }
     }
 
@@ -191,6 +274,8 @@ private struct TodayAgendaRow: View {
             block.layerIndex == 0 ? "rectangle" : "rectangle.inset.filled"
         case .openSlot:
             "clock"
+        case .note:
+            "text.bubble"
         }
     }
 

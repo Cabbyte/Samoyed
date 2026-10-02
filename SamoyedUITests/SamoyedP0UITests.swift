@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 
 final class SamoyedP0UITests: XCTestCase {
@@ -180,6 +181,67 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["No Routine Selected"].exists)
     }
 
+    func testNestConnectedDesignAndNavigation() throws {
+        launch(fixture: .frozenRuntime, nestState: "synced")
+        openTab("Library")
+        let nest = app.buttons["library-nest"]
+        XCTAssertTrue(nest.waitForExistence(timeout: 5))
+        XCTAssertTrue(nest.label.contains("已同步"))
+        attachScreenshot("Nest Library connected")
+        nest.tap()
+        XCTAssertTrue(app.navigationBars["Samoyed Nest"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["nest-sync-now"].isEnabled)
+        XCTAssertTrue(app.staticTexts["上海 · UTC+8"].exists)
+        XCTAssertTrue(app.staticTexts["samoyed.protium.top"].exists)
+        attachScreenshot("Nest account synced")
+        let conflicts = app.buttons["nest-conflicts"]
+        XCTAssertTrue(conflicts.label.contains("无冲突"))
+        conflicts.tap()
+        XCTAssertTrue(app.staticTexts["没有同步冲突"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(revealByScrolling(app.buttons["nest-logout"]))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["library-nest"].waitForExistence(timeout: 3))
+        app.buttons["library-add-routine"].tap()
+        XCTAssertTrue(app.navigationBars["Routine Config Files"].waitForExistence(timeout: 3))
+    }
+
+    func testNestLocalAndImportStatesPreserveActions() throws {
+        launch(fixture: .frozenRuntime)
+        openTab("Library")
+        app.buttons["library-nest"].tap()
+        XCTAssertTrue(app.buttons["nest-login"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["nest-sync-now"].exists)
+        XCTAssertFalse(app.buttons["nest-logout"].exists)
+        attachScreenshot("Nest local mode")
+
+        launch(fixture: .frozenRuntime, nestState: "import")
+        openTab("Library")
+        app.buttons["library-nest"].tap()
+        XCTAssertTrue(app.buttons["导入本机资料"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["使用云端资料"].exists)
+        XCTAssertFalse(app.buttons["nest-sync-now"].exists)
+        attachScreenshot("Nest first import")
+    }
+
+    func testNestConflictStateAtAccessibilitySize() throws {
+        launch(fixture: .frozenRuntime, extraArguments: [
+            "-UIPreferredContentSizeCategoryName", UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
+        ], nestState: "conflict")
+        openTab("Library")
+        let nest = app.buttons["library-nest"]
+        XCTAssertTrue(nest.waitForExistence(timeout: 5))
+        XCTAssertTrue(nest.label.contains("需要处理"))
+        attachScreenshot("Nest Library accessibility XXXL")
+        nest.tap()
+        let conflicts = app.buttons["nest-conflicts"]
+        XCTAssertTrue(revealByScrolling(conflicts))
+        XCTAssertTrue(conflicts.label.contains("2 项待处理"))
+        attachScreenshot("Nest conflict accessibility XXXL")
+        XCTAssertTrue(revealByScrolling(app.buttons["nest-logout"], attempts: 8))
+        attachScreenshot("Nest account footer accessibility XXXL")
+    }
+
     func testLibraryRoutinesAreReadOnlyAndAddressableByStableID() throws {
         launch(fixture: .frozenRuntime)
         openTab("Library")
@@ -195,6 +257,7 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertFalse(app.buttons["Edit"].exists)
 
         app.navigationBars.buttons["Library"].tap()
+        XCTAssertTrue(revealByScrolling(app.buttons["All Routines"]))
         app.buttons["All Routines"].tap()
         XCTAssertTrue(app.navigationBars["All Routines"].waitForExistence(timeout: 3))
 
@@ -212,7 +275,7 @@ final class SamoyedP0UITests: XCTestCase {
         openTab("Library")
 
         let usualWeek = app.buttons["Usual Week"]
-        XCTAssertTrue(usualWeek.waitForExistence(timeout: 5))
+        XCTAssertTrue(revealByScrolling(usualWeek))
         usualWeek.tap()
         XCTAssertTrue(app.navigationBars["Usual Week"].waitForExistence(timeout: 3))
 
@@ -229,11 +292,9 @@ final class SamoyedP0UITests: XCTestCase {
         launch(fixture: .frozenRuntime)
         openTab("Library")
 
-        let more = app.buttons[ID.libraryMore]
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
-        more.tap()
-        XCTAssertTrue(app.buttons["Appearance"].waitForExistence(timeout: 2))
-        app.buttons["Appearance"].tap()
+        let appearance = app.buttons["library-appearance"]
+        XCTAssertTrue(revealByScrolling(appearance))
+        appearance.tap()
         XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 3))
 
         let coral = app.buttons[ID.appearanceCoral]
@@ -288,7 +349,7 @@ final class SamoyedP0UITests: XCTestCase {
             launch(fixture: fixture)
             openTab("Library")
             let planner = app.buttons[ID.libraryPlanner]
-            XCTAssertTrue(planner.waitForExistence(timeout: 5), "Missing Planner entry for \(fixture.rawValue)")
+            XCTAssertTrue(revealByScrolling(planner), "Missing Planner entry for \(fixture.rawValue)")
             planner.tap()
             XCTAssertTrue(element(id: ID.plannerScreen).waitForExistence(timeout: 3))
             XCTAssertTrue(app.staticTexts[title].exists, "Missing \(title) state")
@@ -324,14 +385,13 @@ final class SamoyedP0UITests: XCTestCase {
             fixture: .firstRun,
             extraArguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+                UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
             ]
         )
 
         XCTAssertTrue(element(id: ID.firstRun).waitForExistence(timeout: 5))
         let starter = app.buttons[ID.activationStarter]
-        XCTAssertTrue(starter.exists)
-        XCTAssertTrue(waitUntilHittable(starter))
+        XCTAssertTrue(revealByScrolling(starter))
         starter.tap()
         XCTAssertTrue(revealByScrolling(app.buttons[ID.activationStart]))
     }
@@ -363,6 +423,68 @@ final class SamoyedP0UITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["13:00 - 15:30"].exists)
     }
 
+    func testTodayWithLongNotesOpensAtCurrentTimeAndKeepsFullNoteEditable() throws {
+        launch(fixture: .timelineNotes, simulationMinute: 1347)
+        attachScreenshot("Now open time icon")
+        openTab("Today")
+        XCTAssertTrue(element(id: "today-accessibility-agenda").waitForExistence(timeout: 5))
+        let current = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Open Time", "22:00"
+        )).firstMatch
+        XCTAssertTrue(waitUntilHittable(current), "Today should open at 22:27, not at the first note")
+        let note = app.buttons["timeline-note-70000000-0000-0000-0000-000000000004"]
+        XCTAssertTrue(note.isHittable)
+        XCTAssertLessThan(note.frame.height, 140, "A long note must remain a short timeline preview")
+        attachScreenshot("Today current time with compact notes")
+
+        note.tap()
+        XCTAssertTrue(app.navigationBars["Timeline Note"].waitForExistence(timeout: 3))
+        let text = app.textViews["Note text"]
+        XCTAssertTrue((text.value as? String)?.contains("FULL NOTE END") == true)
+        app.buttons["Cancel"].tap()
+    }
+
+    func testTodayDateNavigationUsesDisplayedPlanRoutineAndReturnsToCurrentTime() throws {
+        launch(fixture: .timelineNotes, simulationMinute: 816)
+        openTab("Today")
+        let routine = app.buttons[ID.todayCurrentRoutine]
+        XCTAssertTrue(routine.waitForExistence(timeout: 5))
+        XCTAssertEqual(routine.value as? String, "Workday")
+
+        app.buttons["Previous Day"].tap()
+        XCTAssertTrue(wait(for: NSPredicate(format: "value == %@", "Recovery Day"), element: routine, timeout: 5))
+        XCTAssertTrue(app.staticTexts["Light Afternoon"].exists)
+        attachScreenshot("Previous day shows its retained routine")
+
+        app.buttons["today-jump-to-now"].tap()
+        XCTAssertTrue(wait(for: NSPredicate(format: "value == %@", "Workday"), element: routine, timeout: 5))
+        let current = app.buttons["timeline-block-40000000-0000-0000-0000-000000000003"]
+        XCTAssertTrue(waitUntilHittable(current))
+        XCTAssertFalse(app.navigationBars["Block Details"].exists)
+        app.buttons["today-jump-to-now"].tap()
+        XCTAssertTrue(current.isHittable)
+        XCTAssertFalse(app.navigationBars["Block Details"].exists)
+
+        app.buttons["Previous Day"].tap()
+        app.buttons["Next Day"].tap()
+        XCTAssertTrue(wait(for: NSPredicate(format: "value == %@", "Workday"), element: routine, timeout: 5))
+        XCTAssertTrue(waitUntilHittable(current))
+        attachScreenshot("Today nested blocks and notes")
+    }
+
+    func testAgendaNotesAndCurrentTimeWithAccessibilityText() throws {
+        launch(fixture: .timelineNotes, simulationMinute: 1347, extraArguments: [
+            "-UIPreferredContentSizeCategoryName", UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
+        ])
+        openTab("Today")
+        let current = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Open Time", "22:00"
+        )).firstMatch
+        XCTAssertTrue(waitUntilHittable(current))
+        XCTAssertGreaterThan(current.frame.height, 140, "Verify the accessibility font override actually took effect")
+        attachScreenshot("Today current time at accessibility text size")
+    }
+
     func testLongTitleFitsMeasured320PointContentPreview() throws {
         launch(fixture: .longTitle, simulationMinute: 750, contentWidth: 320)
         openTab("Today")
@@ -391,7 +513,8 @@ final class SamoyedP0UITests: XCTestCase {
         route: String? = nil,
         simulationMinute: Int? = 816,
         contentWidth: Int? = nil,
-        extraArguments: [String] = []
+        extraArguments: [String] = [],
+        nestState: String? = nil
     ) -> XCUIApplication {
         if app?.state != .notRunning {
             app?.terminate()
@@ -409,6 +532,7 @@ final class SamoyedP0UITests: XCTestCase {
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US"
         ]
+        application.launchEnvironment["SAMOYED_QA_NEST_STATE"] = nestState
         application.launchArguments += extraArguments
         app = application
         application.launch()
@@ -523,6 +647,7 @@ final class SamoyedP0UITests: XCTestCase {
 }
 
 private enum Fixture: String {
+    case timelineNotes = "timeline-notes"
     case coincidentStarts = "coincident-starts"
     case longTitle = "long-title"
     case firstRun = "first-run"
