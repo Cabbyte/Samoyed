@@ -30,6 +30,36 @@ export function resolveBlocks(blocks:Block[]):Map<string,{start:number;end:numbe
  }
  children();return ranges;
 }
+
+// A merged snapshot must still resolve to its stored ranges. In particular, a
+// retained root must not be shortened by a root from a different routine.
+export function validatePlanStructure(plan:Plan):void {
+ const blocks=plan.blocks.filter(b=>!b.isCancelled&&b.kind!=='blankBase');
+ const ranges=resolveBlocks(blocks.map(b=>({id:b.id,parentTemplateBlockID:b.parentBlockID,layerIndex:b.layerIndex,title:b.title,timing:b.timing,taskBlueprints:[],reminders:[]})));
+ const taskIDs=plan.blocks.flatMap(b=>b.tasks.map(t=>t.id));
+ if(new Set(taskIDs).size!==taskIDs.length)throw new DomainError('duplicate_task');
+ for(const block of blocks){
+  const range=ranges.get(block.id)!;
+  if(range.start!==block.resolvedStartMinuteOfDay||range.end!==block.resolvedEndMinuteOfDay)throw new DomainError('snapshot_range_mismatch');
+ }
+}
+
+function rootOf(block:Plan['blocks'][number],byID:Map<string,Plan['blocks'][number]>):Plan['blocks'][number] {
+ while(block.parentBlockID){
+  const parent=byID.get(block.parentBlockID);
+  if(!parent)throw new DomainError('invalid_parent');
+  block=parent;
+ }
+ return block;
+}
+
+function frozenSubtrees(plan:Plan,executed:Set<string>):Plan['blocks'] {
+ const byID=new Map(plan.blocks.map(b=>[b.id,b]));
+ const roots=new Set(plan.blocks.filter(b=>
+  Temporal.Instant.compare(Temporal.Instant.from(b.startsAt),Temporal.Now.instant())<=0||executed.has(b.id)||plan.correctionRevisions?.[b.id]
+ ).map(b=>rootOf(b,byID).id));
+ return plan.blocks.filter(b=>roots.has(rootOf(b,byID).id));
+}
 const weekdaySchema=z.object({weekday:z.number().int().min(1).max(7),savedTemplateID:uuid,effectiveFrom:localDay.optional()}).strict();
 const exceptionSchema=z.object({date:localDay,savedTemplateID:uuid.nullable()}).strict();
 const executionSchema=z.object({planID:uuid,planRevision:z.number().int().positive(),blockInstanceID:uuid,taskInstanceID:uuid,isCompleted:z.boolean(),occurredAt:instant,timeZoneID:z.string(),source:z.enum(['ios','agent','legacy']),correctionOperationID:uuid.optional()}).strict();
@@ -172,7 +202,8 @@ export class NestService {
   const plans=await this.repo.list(user,'plan');const existing=plans.find(p=>Temporal.PlainDate.from((p.body as Plan).date).toString()===key);
   const executions=await this.repo.list(user,'execution');
   const previous=existing?.body as Plan|undefined;
-  const frozen=previous?.blocks.filter(b=>Temporal.Instant.compare(Temporal.Instant.from(b.startsAt),Temporal.Now.instant())<=0||executions.some(e=>(e.body as z.infer<typeof executionSchema>).blockInstanceID===b.id))??[];
+  if(previous)validatePlanStructure(previous);
+  const frozen=previous?frozenSubtrees(previous,new Set(executions.map(e=>(e.body as z.infer<typeof executionSchema>).blockInstanceID))):[];
   // A timezone change leaves today's started snapshot in its original timezone.
   if(previous&&frozen.length&&previous.timeZoneID!==user.timeZoneID)return this.applyCorrections(user,previous);
   const history=await this.repo.db.all<{kind:string;entityID:string;expectedRevision:number;deleted:number;body:string}>('SELECT kind,entityID,expectedRevision,deleted,body FROM operations WHERE userID=? AND kind IN (?,?,?) ORDER BY rowid',[user.id,'routine','weekdayRule','dateException']);
@@ -184,6 +215,7 @@ export class NestService {
    if(!previous)return undefined;
    if(previous.blocks.length===frozen.length)return this.applyCorrections(user,previous);
    const empty={...previous,sourceRevision:0,blocks:frozen,revision:previous.revision+1,lastGeneratedAt:new Date().toISOString()};
+   validatePlanStructure(empty);
    await this.repo.apply(user,{operationID:crypto.randomUUID(),kind:'plan',entityID:empty.id,expectedRevision:previous.revision,deleted:false,payload:empty} as any,empty);
    return empty;
   }
@@ -192,11 +224,65 @@ export class NestService {
   const ranges=resolveBlocks(source.blocks),planID=existing?.id??await stableID(user.id+':'+key);
   const ids=new Map(source.blocks.map(b=>[b.id,previous?.blocks.find(old=>old.sourceBlockID===b.id)?.id??crypto.randomUUID()]));
   const plan:Plan={id:planID,date,sourceSavedTemplateID:source.id,sourceRevision:routine.revision,revision:(existing?.revision??0)+1,timeZoneID:user.timeZoneID,lastGeneratedAt:new Date().toISOString(),hasUserEdits:false,blocks:source.blocks.map(b=>{const r=ranges.get(b.id)!;return {id:ids.get(b.id)!,dayPlanID:planID,sourceBlockID:b.id,parentBlockID:b.parentTemplateBlockID?ids.get(b.parentTemplateBlockID):undefined,layerIndex:b.layerIndex,kind:'userDefined',title:b.title,note:b.guidance??b.note??undefined,reminders:b.reminders,timing:b.timing,isCancelled:false,resolvedStartMinuteOfDay:r.start,resolvedEndMinuteOfDay:r.end,startsAt:wallTime(date,r.start,user.timeZoneID),endsAt:wallTime(date,r.end,user.timeZoneID),tasks:b.taskBlueprints.map(t=>({...t,id:previous?.blocks.flatMap(b=>b.tasks).find(old=>old.sourceTaskID===t.id)?.id??crypto.randomUUID(),sourceTaskID:t.id,isCompleted:false}))};})};
-  plan.blocks=[...frozen,...plan.blocks.filter(b=>!frozen.some(old=>old.sourceBlockID===b.sourceBlockID))];
+  const freshByID=new Map(plan.blocks.map(b=>[b.id,b]));
+  const frozenSources=new Set(frozen.map(b=>b.sourceBlockID));
+  plan.blocks=[...frozen,...plan.blocks.filter(b=>!frozenSources.has(rootOf(b,freshByID).sourceBlockID))];
+  try { validatePlanStructure(plan); }
+  catch(error){
+   // A conflicting selection must not corrupt the last usable, executed
+   // snapshot. Keep its source metadata too; the selection rule stays intact.
+   if(previous&&error instanceof DomainError)return this.applyCorrections(user,previous);
+   throw error;
+  }
   if(previous&&JSON.stringify(plan.blocks)===JSON.stringify(previous.blocks))return this.applyCorrections(user,previous);
   try { await this.repo.apply(user,{operationID:crypto.randomUUID(),kind:'plan',entityID:plan.id,expectedRevision:existing?.revision??0,deleted:false,payload:plan} as any,plan); }
   catch(error){if(error instanceof DomainError&&error.code==='revision_conflict'){const winner=await this.repo.get(user,'plan',plan.id);if(winner)return winner.body as Plan;}throw error;}
   return this.applyCorrections(user,plan);
+ }
+
+ // Explicit administrative recovery only. The old versions and every event
+ // remain immutable; recovery is a new, revision-checked sync change.
+ async repairPlan(user:User,planID:string,expectedRevision:number,sourceRevision:number,operationID:string,apply=false) {
+  if(!Number.isInteger(expectedRevision)||!Number.isInteger(sourceRevision)||sourceRevision<1||sourceRevision>=expectedRevision)throw new DomainError('invalid_recovery_revision');
+  uuid.parse(operationID);
+  const [watermark]=await this.repo.db.all<{sequence:number}>('SELECT COALESCE(MAX(sequence),0) AS sequence FROM changes WHERE userID=?',[user.id]);
+  const source=await this.planVersion(user,planID,sourceRevision);
+  validatePlanStructure(source);
+  const candidate={...source,revision:expectedRevision+1};
+  const op={operationID,kind:'plan',entityID:planID,expectedRevision,deleted:false,payload:candidate} as any;
+  const replay=await this.repo.receipt(user,op);
+  if(replay)return {applied:true,replayed:true,revision:replay.revision,sourceRevision,blockCount:candidate.blocks.length};
+  const current=await this.repo.get(user,'plan',planID);
+  if(!current||current.deleted||current.revision!==expectedRevision)throw new DomainError('revision_conflict',409);
+  const damaged=current.body as Plan;
+  let invalid=false;try{validatePlanStructure(damaged);}catch(error){if(!(error instanceof DomainError))throw error;invalid=true;}
+  if(!invalid)throw new DomainError('recovery_not_needed',409);
+  const events=await this.repo.list(user,'execution'),notes=await this.repo.list(user,'note');
+  const protectedIDs=new Set(damaged.blocks.filter(b=>Temporal.Instant.compare(Temporal.Instant.from(b.startsAt),Temporal.Now.instant())<=0).map(b=>b.id));
+  for(const event of events){
+   const value=event.body as z.infer<typeof executionSchema>;
+   if(value.planID!==planID)continue;
+   const block=candidate.blocks.find(b=>b.id===value.blockInstanceID);
+   if(!block?.tasks.some(t=>t.id===value.taskInstanceID))throw new DomainError('recovery_would_change_history',409);
+   protectedIDs.add(value.blockInstanceID);
+  }
+  for(const note of notes){
+   const value=note.body as z.infer<typeof noteSchema>;
+   if(value.blockInstanceID&&damaged.blocks.some(b=>b.id===value.blockInstanceID))protectedIDs.add(value.blockInstanceID);
+  }
+  if(JSON.stringify(damaged.correctionRevisions??{})!==JSON.stringify(source.correctionRevisions??{}))throw new DomainError('recovery_would_change_history',409);
+  for(const id of protectedIDs){
+   const before=damaged.blocks.find(b=>b.id===id),after=candidate.blocks.find(b=>b.id===id);
+   if(!after||JSON.stringify(before)!==JSON.stringify(after))throw new DomainError('recovery_would_change_history',409);
+  }
+  if(apply){
+   const guardID=crypto.randomUUID();
+   await this.repo.apply(user,op,candidate,[
+    {sql:'INSERT INTO operation_guards VALUES(?,CASE WHEN NOT EXISTS(SELECT 1 FROM changes WHERE userID=? AND sequence>? AND NOT(kind=? AND entityID=? AND revision=?)) THEN 1 ELSE 0 END)',args:[guardID,user.id,watermark.sequence,'plan',planID,expectedRevision+1]},
+    {sql:'DELETE FROM operation_guards WHERE id=?',args:[guardID]}
+   ]);
+  }
+  return {applied:apply,replayed:false,revision:candidate.revision,sourceRevision,blockCount:candidate.blocks.length,protectedBlockCount:protectedIDs.size};
  }
  private async applyCorrections(user:User,base:Plan):Promise<Plan>{
   const corrections=await this.repo.list(user,'dayCorrection');let changed=false;
@@ -205,6 +291,9 @@ export class NestService {
    const c=entity.body as z.infer<typeof correctionSchema>;
    if(entity.deleted||c.planID!==plan.id||c.planRevision>base.revision||(plan.correctionRevisions[entity.id]??0)>=entity.revision)continue;
    const block=plan.blocks.find(b=>b.id===c.blockInstanceID);if(!block)continue;
+   // Correction validation uses absolute snapshot ranges. Preserve those same
+   // ranges for descendants when changing their parent's start time.
+   if(!changed)for(const item of plan.blocks)item.timing={absolute:{startMinuteOfDay:item.resolvedStartMinuteOfDay,requestedEndMinuteOfDay:item.resolvedEndMinuteOfDay}};
    block.resolvedStartMinuteOfDay=c.startMinuteOfDay;block.resolvedEndMinuteOfDay=c.endMinuteOfDay;
    block.timing={absolute:{startMinuteOfDay:c.startMinuteOfDay,requestedEndMinuteOfDay:c.endMinuteOfDay}};
    block.startsAt=wallTime(plan.date,c.startMinuteOfDay,plan.timeZoneID);block.endsAt=wallTime(plan.date,c.endMinuteOfDay,plan.timeZoneID);
@@ -213,6 +302,7 @@ export class NestService {
    plan.correctionRevisions[entity.id]=entity.revision;changed=true;
   }
   if(!changed)return base;
+  validatePlanStructure(plan);
   plan.revision=base.revision+1;plan.hasUserEdits=true;
   await this.repo.apply(user,{operationID:crypto.randomUUID(),kind:'plan',entityID:plan.id,expectedRevision:base.revision,deleted:false,payload:plan} as any,plan);
   return plan;

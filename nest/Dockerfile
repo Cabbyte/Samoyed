@@ -12,7 +12,7 @@ RUN node scripts/build-node.mjs
 FROM build AS test
 COPY test ./test
 COPY contracts ./contracts
-CMD ["node", "--import", "tsx", "--test", "--test-concurrency=1", "test/auth.test.ts", "test/routines.test.ts", "test/sync.test.ts"]
+CMD ["node", "--import", "tsx", "--test", "--test-concurrency=1", "test/auth.test.ts", "test/routines.test.ts", "test/sync.test.ts", "test/plan-recovery.test.ts"]
 
 FROM build AS dependencies
 RUN npm prune --omit=dev --ignore-scripts

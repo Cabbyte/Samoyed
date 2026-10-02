@@ -41,6 +41,10 @@ The patch in https://github.com/Cabbyte/Acornary/pull/5 was merged as `1e936d47c
 
 Verify backups in a separate database/container with `PRAGMA integrity_check` and expected identity/entity counts. A raw copy of the active main database file is not a backup. Never restore an older snapshot over live writes as an automatic rollback. Prefer the previous schema-compatible image, preserving the database and new records.
 
+For a structurally invalid materialized plan, `node dist-node/src/admin.js repair-plan <plan-id> <expected-revision> <source-revision> <operation-id>` previews recovery from that plan's immutable history. Rehearse on a backup first. Add `--apply` only for the reviewed recovery, retaining the exact operation ID on retries. This appends a new plan revision and sync change; it does not replace the database or edit Note/execution records. Recovery refuses a valid current plan, stale revisions, changed corrections, loss of started/executed/Note-linked blocks, or any concurrent user write. No recovery endpoint is exposed through MCP or HTTP.
+
+Materialization retains complete root subtrees containing started, executed, or corrected blocks. If merging a selected routine would invalidate those subtrees or shorten their stored ranges, the previous valid snapshot and its source metadata remain in use. The requested date/weekday rule is not rewritten. An unexecuted future plan remains replaceable.
+
 ## Access
 
 An administrator can generate a one-time invite with `node dist-node/src/admin.js invite <display-name>` through the Nest container. Deliver its output only to the intended recipient; do not include it in logs, issues or repository files. The browser handles Passkeys and consent. iOS uses public-client PKCE; MCP clients use their own OAuth authorization. Device and Agent grants are individually revoked through the account page.
