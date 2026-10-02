@@ -20,4 +20,9 @@ The six template vector assets in `Samoyed/Assets.xcassets` were downloaded from
 
 ## Validation
 
-Core, simulator, visual and release results are recorded below after verification. Nest UI fixtures run only in DEBUG, skip Keychain restore and network synchronization, and do not demonstrate a new production authentication or two-device synchronization acceptance run.
+- Local core tests: 149 passed.
+- Source commit `bbc61d2`: CI core tests, Nest SQLite/D1 contracts and unsigned iOS archive all passed: https://github.com/Cabbyte/Samoyed/actions/runs/37028976382.
+- Simulator regression was interrupted by simulator service failure after 6 tests passed. The remaining 18 cases did not complete; this is not a full UI acceptance pass.
+- On 2026-10-03 the user explicitly requested publishing TestFlight first and stopping simulator use. Further UI and visual acceptance is deferred to the user's iPhone 16.
+- Nest UI fixtures run only in DEBUG, skip Keychain restore and network synchronization, and do not demonstrate a new production authentication or two-device synchronization acceptance run.
+- Release target: `ios-v2.2.1`, using the existing signed-IPA validation and Apple upload workflow.
