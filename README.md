@@ -1,6 +1,8 @@
-# Samoyed Specification
+# Samoyed
 
-本 README 是 Samoyed 的领域模型与核心算法规格。
+Samoyed 是单人 Routine 运行终端，包含 SwiftUI iPhone App、共享 Swift 核心与 Nest HTTP/MCP 服务。本 README 定义领域模型和核心算法；当前产品范围见 PRD。
+
+开发与验证：`swift test`；iOS 使用 Xcode 的 `Samoyed` scheme；Nest 的 Node 24 开发命令见 [nest/README.md](nest/README.md)。发布与代码维护见 [MaintenanceGuide.md](MaintenanceGuide.md)。
 
 文档权威顺序如下：
 
@@ -18,15 +20,11 @@
 - `Now` 稳定回答当前状态、当前步骤和下一状态。
 - `Today` 是只读时间线，只允许 checklist completion 与选择已有 Routine。
 - 本地数据、时间解析、任务完成和模板实例化可靠。
-- Feedback append-only；Suggestion 必须经本地审批；Planner 可选且默认 disconnected。
+- Timeline Notes 独立记录与同步；Feedback append-only；Suggestion 必须经本地审批；Planner 可选且默认 disconnected。
 
-导入导出、Widget、Live Activity 和六个 App Intent 是当前合同的一部分；移动端结构 authoring、Controls 与远程自动覆盖仍冻结。UI 只能消费核心层语义，不能反向定义数据模型。
+导入导出、Widget、Live Activity 和六个 App Intent 是当前合同的一部分；移动端结构 authoring、Controls、通知调度与无授权自动覆盖不在当前范围。UI 只能消费核心层语义，不能反向定义数据模型。
 
-当前阶段对时间采用一个刻意简化的前提：
-
-- 每个本地自然日都按固定 `1440` 分钟处理
-- 当前不考虑 DST、夏令时切换、重复小时或缺失小时
-- 当前不讨论跨时区同步
+结构算法使用每个本地自然日 `0...1440` 的逻辑分钟轴，不把一天的实际秒数写入 block 结构。Nest 用账号 IANA 时区将墙上时间转换为 instant；DST 重复小时取较早 instant，缺失小时按 gap 前移。Swift `NestTimeResolver` 与 TypeScript 使用共同时间用例验证；时区变更需要显式确认，已开始的计划保留原快照时区。
 
 ## 1. 术语表
 
@@ -233,7 +231,7 @@
 
 ### 2.4 `ReminderRule`
 
-提醒当前只定义数据，不要求本阶段实现通知调度。
+ReminderRule 保留提醒意图；当前版本不调度系统通知。
 
 建议字段：
 
@@ -518,6 +516,8 @@
 
 ## 5. 取消与层级塌缩算法
 
+本节是核心变更算法与兼容测试的技术规格，不为 Today 提供 cancel/编辑入口。
+
 当一个下层块被取消时，它上方的块需要整体下沉一层。
 
 ### 5.1 `cancelBlock(blockID)` 的语义
@@ -659,7 +659,7 @@
 
 ### 8.2 正式 Routine 版本
 
-iPhone 不暴露标题、块结构、时间、备注、提醒或任务蓝图的编辑器。结构变更来自导入或 `routineImprovement` Suggestion；接受后保持稳定的 logical Routine ID，递增 revision，生成新的 `versionID`，记录 `parentVersionID` 与 provenance，并保存旧 revision snapshot。已经物化的 Today 不随之改变。
+iPhone 不暴露标题、块结构、时间、备注、提醒或任务蓝图的编辑器。本地结构变更来自导入或 `routineImprovement` Suggestion；Nest 账号还可接收授权的外部编排版本，遵守第 14 节的生效日期和快照保护规则。本地接受后保持稳定的 logical Routine ID，递增 revision，生成新的 `versionID`，记录 `parentVersionID` 与 provenance，并保存旧 revision snapshot。已经物化的 Today 不随之改变。
 
 ## 9. 模板选择算法
 
@@ -770,355 +770,25 @@ iPhone 不暴露标题、块结构、时间、备注、提醒或任务蓝图的�
 3. 候选模板依然来源于真实 `DayPlan`，而不是反向来源于正式模板
 4. 未来日期若要吸收模板变化，只能通过满足 9.5 条件的显式重生成
 
-## 11. UI 实现方案
+## 11. App 状态与入口
 
-本节定义未来 iOS App 的完整 UI 方案。它是实现设计，不是当前阶段的编码目标。
+界面合同集中在 [Design.md](Design.md)，不再在领域规格中维护另一套 Today 编辑器和模板管理 UI。
 
-### 11.1 UI 总体原则
+### 11.1 当前分层
 
-1. 整个 App 必须以 `SamoyedCore` 为唯一业务核心。
-2. SwiftUI 视图层只能读取和提交意图，不能自行计算时间、层级、模板选择或任务来源规则。
-3. 所有 `resolvedStart`、`resolvedEnd`、`activeChain`、`taskSourceBlock`、模板选择结果都必须来自核心层。
-4. 所有编辑动作在提交前都必须经过核心层校验；UI 不得绕过核心规则直接写入非法数据。
-5. 当前阶段先保留 iPhone 单窗口结构，不扩展多窗口和 Widget。
+- `SamoyedStore` 负责加载、物化、持久化、用户命令与同步触发。
+- `SamoyedPresentation` 把核心数据映射成 Now、Today、Routine/Library 的 screen model。
+- `SamoyedDocumentRepository` 和 `NestLocalDatabase` 为 App 与扩展提供 App Group SQLite、账号分区及原子写入。
+- `NestAccountController` 负责认证生命周期和同步；Nest 服务的 domain/repository 分别负责规则和 revision/receipt/cursor。
+- 视图仅持有日期选择、详情、草稿等 presentation state，不缓存另一套时间或模板推导结果。
 
-### 11.2 根导航结构
+### 11.2 运行界面边界
 
-根视图采用 `TabView`，固定包含 3 个一级页面：
+Now 展示当前执行上下文。Today 展示只读计划、checklist 与独立 Timeline Notes；日期返回和 Routine 标题以实际显示的快照为准。Library 组织 Routines、Usual Week、配置文件、Nest、Suggestions、Planner 和显示设置。
 
-1. `NowView`
-2. `TodayView`
-3. `LibraryView`
+导入、Suggestion 审批、授权的 Nest 编排与 Today 的查看/完成是不同写入入口。每个入口仍必须经过对应领域校验；不能因为核心层有结构修改算法，就恢复手机端 block 编辑器。
 
-每个 Tab 内部可以独立使用 `NavigationStack`。
-
-推荐顺序：
-
-1. `Now`
-2. `Today`
-3. `Library`
-
-推荐含义：
-
-- `NowView`
-  - 面向“此刻应该做什么”。
-
-- `TodayView`
-  - 面向“今天整天的时间块结构与编辑”。
-
-- `LibraryView`
-  - 面向“规划资产入口”，其中包含 `TemplatesView` 和当天 block 的 YAML 导入导出。
-
-### 11.3 UI 与核心层的边界
-
-未来 UI 需要有一个薄适配层，负责：
-
-- 从本地持久化层读取原始数据
-- 组装为 `SamoyedCore` 所需的数据结构
-- 调用核心算法
-- 将用户编辑意图转换为核心层操作
-- 在核心层校验成功后再写回持久化层
-
-UI 不负责：
-
-- 时间解析
-- 任务来源回退
-- 层级塌缩
-- 候选模板窗口滚动
-- override 优先级判断
-
-### 11.4 `NowView`
-
-`NowView` 是产品核心、默认首页，也是用户打开 App 后最先需要看到的内容。它优先回答：现在是什么、现在要做什么、接下来是什么。
-
-如果用户尚未拥有可运行模板，`NowView` 应进入真实首次激活流程；不得用生产 sample data 伪造已完成设置的状态。如果今天已有默认模板，则自动运行，不先展示每日模板选择器。
-
-#### 11.4.1 数据来源
-
-`NowView` 必须从核心层拿到：
-
-- 今天的 `DayPlan`
-- 当前时刻的 `activeChain`
-- 当前时刻的 `activeBlock`
-- 当前时刻的 `taskSourceBlock`
-
-#### 11.4.2 页面结构
-
-页面建议从上到下分为以下区域：
-
-1. 当前 block、时间范围与状态说明
-2. 当前未完成 checklist，首屏优先展示最多 3 项
-3. 下一 block 的轻量预告
-4. “今天不同”与查看 `Today` 的次要入口
-
-#### 11.4.3 当前生效链展示
-
-`activeChain` 是核心层推导语义，不是必须完整暴露给用户的产品概念。页面需要表达当前来源与必要上下文，但不应把层级结构本身变成首屏主角。
-
-推荐表现：
-
-- `activeBlock` 视觉上最突出。
-- 只有在任务来自下层 block 时，才补充必要的来源说明。
-- 不显示 `L0`、`L1`、`taskSourceBlock` 等内部术语。
-- 已完成内容折叠或降权，不占据主要首屏空间。
-
-#### 11.4.4 当前任务面板
-
-任务面板只显示 `taskSourceBlock` 的任务，而不是简单显示 `activeBlock` 的任务。
-
-必须遵守：
-
-1. 如果 `taskSourceBlock` 存在，则优先展示该块未完成任务，首屏默认最多 3 项
-2. 如果 `taskSourceBlock == nil` 且当前 `activeBlock` 是 `BlankBaseBlock`，则展示“当前为空白时段”
-3. 如果 `taskSourceBlock == nil` 且当前 `activeBlock` 不是 `BlankBaseBlock`，则展示“当前链条没有未完成任务”
-4. 用户勾选任务后，UI 必须重新向核心层请求新的 `taskSourceBlock`
-
-#### 11.4.5 `NowView` 可执行操作
-
-允许：
-
-- 勾选当前任务
-- 查看必要的当前上下文
-- 跳转到 `TodayView` 并定位到当前块
-- 从“今天不同”切换当天模板或选择无模板日
-
-不建议在 `NowView` 直接做复杂结构编辑，例如：
-
-- 新建底层块
-- 调整层级
-- 批量编辑时间
-
-这些操作应交给 `TodayView`。
-
-### 11.5 `TodayView`
-
-`TodayView` 是整天结构的只读查看器。它展示今天的 `DayPlan`，只保留 checklist completion、Feedback 和选择已有 Routine。
-
-#### 11.5.1 视觉模型
-
-`TodayView` 应采用“类日历的时间轴视图”，而不是简单列表。
-
-推荐表现：
-
-- 纵向时间轴，覆盖当天 `00:00` 到 `24:00`
-- `BaseBlock` 作为主时间轨道
-- `OverlayBlock` 在其父块之上显示
-- 不同层级通过缩进、层叠卡片、边框或色带区分
-- 当前时间应有清晰的“现在”指示线
-
-#### 11.5.2 展示规则
-
-1. `BaseBlock` 必须形成一天的底层骨架
-2. `BlankBaseBlock` 需要以低视觉权重补齐所有底层空档
-3. `OverlayBlock` 只能显示在其父块内部
-4. 同父同层不允许视觉重叠，因为数据上也不允许重叠
-5. 被取消的块默认不在主时间轴中展示
-6. 如需历史能力，可在未来单独加“已取消”区域，但不属于当前阶段
-
-#### 11.5.3 选中状态
-
-`TodayView` 需要支持“当前选中块”的概念。
-
-选中后应展示：
-
-- 标题
-- 层级
-- 时间定义方式
-- 实际解析时间
-- 备注
-- 提醒配置
-- 任务列表
-- 所属父块
-- 直接子块列表
-
-#### 11.5.4 新建操作
-
-核心层可以支持以下结构操作，但 P0 UI 不把它们全部作为高频入口。`TodayView` 只在用户明确进入修正流程后发起编辑。
-
-允许新建：
-
-1. 新的 `BaseBlock`
-2. 选中某个块后，在其上方新建 `OverlayBlock`
-
-新建时 UI 需要先要求用户选择：
-
-- 标题
-- 时间模式：`absolute` 或 `relative`
-- 对应时间参数
-- 备注
-- 提醒
-- checklist 任务
-
-但真正是否合法，必须由核心层最终裁定。
-
-#### 11.5.5 编辑操作
-
-`TodayView` 允许编辑：
-
-- 标题
-- 备注
-- 提醒
-- 任务内容
-- 时间模式与时间参数
-
-当前阶段不允许自由编辑“父子关系”本身。
-
-当前阶段允许的结构变化仅包括：
-
-1. 新建一个新的 `BaseBlock`
-2. 在选中块上新建一个新的 `OverlayBlock`
-3. 取消一个已有块并触发层级塌缩
-
-如果未来需要支持显式 reparent，必须先为其补充独立算法规格，再允许进入 UI。
-
-#### 11.5.6 取消操作
-
-`TodayView` 必须提供“取消块”操作，而不是直接删除块。
-
-用户触发取消后：
-
-1. UI 只提交“取消这个 block”的意图
-2. 核心层执行层级塌缩与时间固化
-3. UI 刷新整个受影响分支
-
-#### 11.5.7 `TodayView` 的辅助视图
-
-推荐包含以下辅助区域：
-
-- 顶部日期切换条
-- 当前时间快速定位按钮
-- 选中块详情抽屉或底部面板
-- 新建/编辑 block 的 sheet
-- 仅展示校验失败信息的错误提示层
-
-### 11.6 `TemplatesView`
-
-`TemplatesView` 是低频基础设施页面，负责正式模板和简单默认日设置。候选模板、复杂 schedule 与 date override 管理属于冻结能力，不得进入首次激活或日常启动主路径。
-
-#### 11.6.1 页面结构
-
-目标状态优先拆分为 2 个区域：
-
-1. `Saved`
-2. `Defaults`
-
-`Suggested` 可以保留为实验性低优先区域。首次激活必须提供起步模板或导入入口，不能要求用户先积累三天计划。
-
-#### 11.6.2 `Suggested`
-
-该区域展示最近三天的候选模板窗口。
-
-必须展示：
-
-- `today-2`
-- `today-1`
-- `today`
-
-每个候选模板卡片应包含：
-
-- 来源日期
-- 底层块数量
-- 总块数量
-- 任务蓝图数量
-- 预览摘要
-- “保存为正式模板”入口
-
-#### 11.6.3 `Saved`
-
-该区域展示所有 `SavedDayTemplate`。
-
-每个正式模板应支持：
-
-- 查看结构预览
-- 查看版本与 provenance
-- 选择为 Today 或 Usual Week 的现有 Routine
-- 请求 Planner 生成改进 Suggestion
-
-必须支持从起步模板或导入得到正式模板；从候选模板保存只是可选来源。
-
-#### 11.6.4 `Schedule`
-
-该区域负责低频默认日设置。当前产品行为是“存在明确默认时自动运行；今天不同时再主动切换”，不要求用户每天进入此页面确认。
-
-以下完整 schedule UI 属于冻结能力；保留这些语义是为了兼容已有数据和实现，不表示它属于 P0 主路径。
-
-它需要同时展示两层信息：
-
-1. `WeekdayTemplateRule`
-2. `DateTemplateOverride`
-
-针对明天，页面需要明确展示：
-
-- 明天的日期
-- 明天的 weekday
-- 由 weekday 规则自动推导出的模板
-- 是否存在日期级 override
-- 最终生效的模板
-
-#### 11.6.5 明日 override 交互
-
-用户可以在 `TemplatesView` 中为明天设置临时 override。
-
-交互要求：
-
-1. 如果没有 override，则展示“使用 weekday 自动规则”
-2. 用户可以从正式模板列表中选一个作为明日 override
-3. 如果已经存在 override，用户可以修改或清除
-4. 页面必须明确告诉用户：override 优先于 weekday 规则
-
-### 11.7 详情页与审批界面的组织方式
-
-移动端收敛为只读 Routine Detail、Block Details、Feedback sheet、Suggestions pushed navigation 和 Usual Week 的现有 Routine 选择器。结构编辑器不是 iOS 产品合同的一部分。
-
-### 11.8 UI 状态管理
-
-UI 层建议只保留以下几类本地状态：
-
-- 当前选中日期
-- 当前选中 block
-- 当前打开的只读详情或审批页面
-- Feedback 输入草稿
-- 提示信息与错误展示状态
-- 当前运行时可见的 `BlankBaseBlock` 映射
-
-UI 层不应长期缓存：
-
-- 解析后的 `resolvedStart` / `resolvedEnd`
-- 当前活动链推导结果
-- 模板最终选择结果
-
-这些必须随时从核心层重新计算。
-
-### 11.9 当前 UI 架构
-
-当前仓库已经统一围绕以下概念构建：
-
-- `SamoyedDocument`
-- `DayPlan`
-- `TimeBlock`
-- `TaskItem`
-- `SuggestedDayTemplate`
-- `SavedDayTemplate`
-- `WeekdayTemplateRule`
-- `DateTemplateOverride`
-- `DayTemplateSelection`
-
-UI 分层原则：
-
-1. `SamoyedStore` 负责文档加载、物化、持久化和用户命令。
-2. `SamoyedPresentation` 负责把核心模型映射成 `Now`、`Today`、`Templates` 所需的 screen model。
-3. root view 只负责页面级状态、导航和 sheet，不重复实现核心推导。
-
-### 11.10 当前模型约束
-
-为了保持架构稳定，当前实现应继续遵守以下约束：
-
-1. `DayPlan` 与模板集合是唯一业务真相来源，UI 不维护并行状态副本。
-2. `BlankBaseBlock`、active chain、detail model、template summary 都必须在核心层或 presentation 层临时推导，而不是被 UI 长期缓存。
-3. root view 可以持有局部 presentation state，例如选中的分段、当前 sheet、编辑草稿，但不直接承担规则计算。
-4. 对未来日期的模板变更只影响重新物化或显式 regenerate 的 day plan；已经存在的日计划继续作为快照保留。
-
-### 11.11 Routine Config Deeplink 导入
+### 11.3 Routine Config Deeplink 导入
 
 外部编排器优先通过无服务器的内嵌 deep link 打开确认式导入流程：
 
@@ -1140,32 +810,13 @@ samoyed://import-routine?url=<percent-encoded-https-url>&title=<percent-encoded-
 4. 远程模式只接受成功响应和不超过 512 KB 的 UTF-8 文本；重定向后的最终 URL 仍需通过传输校验。
 5. 两种传输都必须先通过 `SamoyedPortableDayBlocks` 的结构与时间校验，再展示来源、block 和 checklist 摘要。
 6. deep link 不直接写入数据；用户必须在 App 内确认 Import、Replace 或 Keep Both。
-7. 导入只加入本地 Routine Library，不修改当天 Materialized Day 或 Execution State，也不建立持续同步。
+7. 导入只写 Routine Library，不直接修改当天 Materialized Day 或 Execution State；Nest 分区中的写入通过账号同步发送，配置 URL 自身不建立订阅。
 
 ## 12. 当前 UI 与平台合同
 
-当前代码已经包含 App UI 与多种系统入口。本节定义产品开发优先级，而不是描述代码是否存在。
+当前范围包括首次激活、默认自动运行、Now、只读 Today、Timeline Notes、配置导入导出、Usual Week、Nest 账号同步、Feedback、Suggestions、可选 Planner，以及 Home/Accessory Widgets、Live Activity、Dynamic Island 和六个 App Shortcuts。
 
-Frozen 合同包含：
-
-- 空数据首次激活
-- 默认模板自动运行
-- `Now` 核心执行体验
-- `Today` 只读查看、checklist completion 与现有 Routine 选择
-- Starter Routine、Routine 导入、切换与本地持久化
-- Feedback、Suggestions 与诚实的 Planner 状态
-- Home/Accessory Widgets、Live Activity、Dynamic Island 与六个 App Intents
-
-以下能力仍处于冻结状态：
-
-- 复杂模板候选和 schedule 管理
-- 多层时间轴编排的继续扩展
-- Control Widgets
-- Home Screen Quick Actions
-- Notification Actions
-- 远程自动规划、云同步和无审批写入
-
-冻结能力不得在 production bundle 中注册，也不得驱动新的核心抽象或扩大产品承诺。
+手机端结构编辑器、Control Widgets、Home Screen Quick Actions、通知调度及无人审批的 Planner 写入不在范围内。候选模板、层级塌缩等内部算法保留不代表它们拥有生产 UI 入口。共享旧字段、历史数据迁移和旧 deep link source 的兼容值继续保留。
 
 ## 13. 单元测试要求
 
@@ -1222,13 +873,24 @@ Frozen 合同包含：
 - `BlankBaseBlock` 不会进入候选模板
 - 已落库 `DayPlan` 不会被后续模板编辑自动改写
 
-## Samoyed Nest private beta
+## 14. Samoyed Nest 与快照保护
 
-Samoyed retains local mode and can connect to a shared Nest account for Routine planning,
-offline execution and timeline Notes. The current public origin is https://samoyed.protium.top.
-See [Nest architecture and development](nest/README.md),
-[verified deployment and acceptance status](docs/samoyed-nest-status.md), and
-[operations and backups](docs/samoyed-nest-operations.md).
+本地模式以本地文档运行；连接 Nest 后，`https://samoyed.protium.top` 是账号数据的唯一可写服务，手机保存可离线运行的分账号副本和待发送操作。旧 Sites 只读。App Store 和公共插件目录提交不属于这次 private beta 发布。
 
-The old Sites deployment is a read-only archive. App Store and public plugin directory submissions
-are outside this private beta.
+### 14.1 版本与时间
+
+- Routine 和星期规则默认从账号时区明天生效；日期例外明确指定目标日。
+- 缓存包含有效版本历史与账号游标，缺失日期按该日有效版本物化。
+- 既有计划优先保留完整的已开始、已执行或已修正子树；合并后校验结构和保存范围。
+- 若新 Routine 会截短或破坏受保护子树，继续使用此前有效快照及其来源，不改写用户请求的规则。
+- `offlinePlan` 依据已发出的历史 cursor 验证来源；`legacyPlan` 只用于明确的旧数据导入。执行事件继续引用原来的计划版本、block 和 task instance。
+
+### 14.2 Notes、同步和恢复
+
+- 固定提示语的 wire 字段 `note` 保留；`TimelineNote` 是另一类带 `occurredAt`、时区和可选 block instance 关联的实体。
+- 本地 SQLite 同一事务持久化业务状态和 outbox；游标只在页面应用成功后推进。
+- 超时重试复用完全相同的 operation ID、payload 与 expected revision。冲突保留双方内容，删除以 tombstone 同步。
+- 无效日程恢复需先在一致性备份上演练，再追加有 revision 检查的新计划版本；保留历史、执行事件与 Notes，不覆盖整个数据库。
+- 本地 JSON → SQLite 迁移、旧字段解码及账号分区保持兼容；cleanup 不删除已有数据。
+
+实现、运行与证据分别见 [Nest README](nest/README.md)、[状态记录](docs/samoyed-nest-status.md) 和 [运维手册](docs/samoyed-nest-operations.md)。

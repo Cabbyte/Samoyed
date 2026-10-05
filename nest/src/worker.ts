@@ -14,7 +14,7 @@ export default {
    const rpc=await request.clone().json().catch(()=>null) as any;
    if(rpc?.method==='tools/call'&&!['nest_connection_status','list_routines','read_entity','read_timeline'].includes(rpc.params?.name))return Response.json({jsonrpc:'2.0',id:rpc.id,result:{isError:true,content:[{type:'text',text:JSON.stringify(archive)}]}});
   }
-  return createApp({instanceID:'appgprj_6abe20b9f0688191ad0710e82fbcfff6',authMode:'sites',repository:()=>new Repository(new D1Adapter(env.DB)),authenticate:async(request,repo)=>{
+  return createApp({instanceID:'appgprj_6abe20b9f0688191ad0710e82fbcfff6',repository:()=>new Repository(new D1Adapter(env.DB)),authenticate:async(request,repo)=>{
    // Only this Workers entry trusts dispatcher-injected identity headers.
    const subject=request.headers.get('oai-authenticated-user-id');if(!subject)return;
    const [user]=await repo.db.all<import('./contracts.js').User>('SELECT u.id,u.timeZoneID,u.timeZoneConfirmed FROM users u JOIN identities i ON i.userID=u.id WHERE i.issuer=? AND i.subject=?',['sites:appgprj_6abe20b9f0688191ad0710e82fbcfff6',subject]);

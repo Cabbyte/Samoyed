@@ -6,4 +6,10 @@
 - The fix preserves whole executed/started/corrected subtrees and validates the merged snapshot before persistence. A conflicting replacement keeps the previous valid snapshot and its source metadata. Parent corrections keep descendant absolute times consistent with correction validation.
 - Administrative recovery defaults to preview, checks source/current revisions, retains protected block contents, refuses concurrent writes, and appends an idempotent plan revision. All earlier versions and events remain stored.
 - Backup rehearsal: revision 2 restored from revision 1 as revision 3, six valid blocks, both protected blocks intact. Re-resolving retained the restored source. All seven current cloud plans validated; every non-plan entity, operation, and change remained byte-for-byte unchanged.
-- Validation: TypeScript typecheck passed; Node SQLite 32/32; D1 29 passed with the three Node-only auth tests skipped; Node 24 Linux amd64 tests under production memory/CPU/PID limits 32/32. Production deployment and phone recovery are recorded after verification.
+- Validation: TypeScript typecheck passed; Node SQLite 32/32; D1 29 passed with the three Node-only auth tests skipped; Node 24 Linux amd64 tests under production memory/CPU/PID limits 32/32. CI passed for `9f6b9db`: https://github.com/Cabbyte/Samoyed/actions/runs/37036915666.
+
+## Follow-up — 2026-10-05
+
+- Read-only production inspection confirmed `samoyed-nest:plan-recovery-20261003-9f6b9db`, image SHA `20731ab272a9b3ee919227f660b5e69c0f6e015b627053a3765af6ad4b945460`, running and healthy with zero restarts. Public `/readyz` returned ready.
+- The October 3 repair run recorded applying the recovery. Its retained iPhone screenshot at 01:04:52 shows Today rendering the restored routine. This is dated evidence, not a fresh device test.
+- On October 5 the user confirmed initial acceptance with no issues and authorized integrating the fix into `main`. Manual airplane-mode and two-physical-device scenarios remain separate acceptance items.

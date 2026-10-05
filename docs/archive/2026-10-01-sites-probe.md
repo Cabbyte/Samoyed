@@ -1,6 +1,6 @@
-# Samoyed Nest v1 implementation and acceptance record
+# Historical Sites/native-auth probe — 2026-10-01
 
-Branch: `codex/samoyed-nest-v1`. This is a work-in-progress implementation, not a delivered beta.
+Historical snapshot from `codex/samoyed-nest-v1`, before the public Nest migration. The unfinished items below describe that probe date, not current blockers. Superseded by [current Nest status](../samoyed-nest-status.md) and [operations](../samoyed-nest-operations.md).
 
 ## Implemented
 

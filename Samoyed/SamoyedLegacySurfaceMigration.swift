@@ -2,7 +2,8 @@ import UIKit
 import UserNotifications
 
 @MainActor
-enum SamoyedSystemSurfaceDormancy {
+enum SamoyedLegacySurfaceMigration {
+    // Preserve this key for users who already completed the legacy surface cleanup.
     private static let migrationKey = "Samoyed.v1.SystemSurfacesDormant"
 
     static func apply(defaults: UserDefaults = .standard) {

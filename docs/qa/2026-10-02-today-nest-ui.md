@@ -26,3 +26,9 @@ The six template vector assets in `Samoyed/Assets.xcassets` were downloaded from
 - On 2026-10-03 the user explicitly requested publishing TestFlight first and stopping simulator use. Further UI and visual acceptance is deferred to the user's iPhone 16.
 - Nest UI fixtures run only in DEBUG, skip Keychain restore and network synchronization, and do not demonstrate a new production authentication or two-device synchronization acceptance run.
 - Release target: `ios-v2.2.1`, using the existing signed-IPA validation and Apple upload workflow.
+
+## Follow-up — 2026-10-05
+
+- TestFlight `ios-v2.2.1` completed as 2.2.1 (14); Apple processing was `VALID`: https://github.com/Cabbyte/Samoyed/actions/runs/37031424218.
+- The user reported initial acceptance with no issues and authorized cleanup, merging to `main`, branch consolidation and another TestFlight release.
+- This confirmation does not retroactively complete the interrupted automated UI suite or the separately listed manual failure scenarios.

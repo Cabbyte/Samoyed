@@ -1,6 +1,6 @@
 import Foundation
 
-// 这一组常量是 app、widget、notification、shortcut 等系统表面共享的配置。
+// App、Widget、Live Activity 和 App Shortcuts 共享的配置。
 // 之所以放在一起，是因为它们大多都和“系统集成入口”有关。
 enum SamoyedSharedConfig {
     private static let appGroupInfoKey = "SamoyedAppGroupIdentifier"
@@ -20,24 +20,9 @@ enum SamoyedSharedConfig {
 
     static let tintPresetDefaultsKey = "SAMOYED_TINT_PRESET"
     static let widgetKind = "Samoyed.NowWidget"
-    static let currentBlockLiveActivityKind = "Samoyed.CurrentBlockLiveActivity"
-    static let openNowControlKind = "Samoyed.OpenNowControl"
-    static let completeCurrentTaskControlKind = "Samoyed.CompleteCurrentTaskControl"
-    static let openCurrentBlockControlKind = "Samoyed.OpenCurrentBlockControl"
-    static let startLiveActivityControlKind = "Samoyed.StartLiveActivityControl"
     static let deepLinkScheme = "samoyed"
     static let sharedDirectoryName = "Samoyed"
     static let documentFileName = "document.json"
-    static let notificationCategoryIdentifier = "SAMOYED_REMINDER"
-    static let notificationActionCompleteTopTask = "SAMOYED_COMPLETE_TOP_TASK"
-    static let notificationActionSnooze = "SAMOYED_SNOOZE_10M"
-    static let notificationUserInfoDateKey = "dateISO"
-    static let notificationUserInfoBlockKey = "blockID"
-    static let notificationUserInfoTaskKey = "taskID"
-    static let quickActionNow = "tang.Samoyed.quickaction.now"
-    static let quickActionToday = "tang.Samoyed.quickaction.today"
-    static let quickActionLibrary = "tang.Samoyed.quickaction.library"
-    static let quickActionCurrentBlock = "tang.Samoyed.quickaction.currentBlock"
 }
 
 // `SamoyedSystemSource` 用来标记“这次系统跳转/动作是从哪里来的”。
@@ -45,6 +30,7 @@ enum SamoyedSharedConfig {
 enum SamoyedSystemSource: String, Codable, Sendable {
     case app
     case widget
+    // Retain source spellings used by links from older app versions.
     case control
     case shortcut
     case notification

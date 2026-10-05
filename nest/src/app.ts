@@ -10,7 +10,6 @@ export interface AppOptions {
  instanceID:string;
  repository:()=>Repository;
  authenticate:(request:Request,repo:Repository)=>Promise<User|undefined>;
- authMode:'sites'|'self-hosted';
 }
 export function createApp(options:AppOptions) {
  const app=new Hono();
@@ -29,8 +28,6 @@ export function createApp(options:AppOptions) {
   console.error(JSON.stringify({requestID,error:'internal_error',route:c.req.routePath}));
   return c.json({error:'internal_error',requestID},500);
  });
- app.get('/',c=>c.html('<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>Samoyed Nest</title></head><body><h1>Samoyed Nest</h1><p>Private beta under verification</p><p>Routine, offline execution and timeline notes.</p><a href="/signin-with-chatgpt?return_to=%2Fv1%2Fidentity">Sign in with ChatGPT</a></body></html>'));
- app.get('/v1/capabilities',c=>c.json({protocolVersion:1,instanceID:options.instanceID,service:'Samoyed Nest',auth:{mode:options.authMode,nativeDeviceAccess:'verification-required'},features:['routine','timeline-note','revision-sync'],releaseStatus:'not-accepted'}));
  async function context(request:Request){const repo=options.repository();const user=await options.authenticate(request,repo);if(!user)throw new DomainError('unauthorized',401);return {repo,user,service:new NestService(repo,event=>console.info(JSON.stringify({event:'operation',requestID:requestIDs.get(request),...event})))};}
  app.post('/v1/account/time-zone',async c=>{const {user,service}=await context(c.req.raw);const input=z.object({timeZoneID:timeZone,expectedTimeZoneID:timeZone,confirmed:z.literal(true)}).strict().parse(await c.req.json());return c.json(await service.setTimeZone(user,input.timeZoneID,input.expectedTimeZoneID,input.confirmed));});
  app.get('/v1/identity',async c=>{const {user}=await context(c.req.raw);return c.json({authenticated:true,user});});

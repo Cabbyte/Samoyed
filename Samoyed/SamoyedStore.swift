@@ -289,15 +289,6 @@ final class SamoyedStore {
         openLibrary()
     }
 
-    func requiresTemplateSelection(
-        for date: LocalDay,
-        today: LocalDay = .today()
-    ) -> Bool {
-        _ = date
-        _ = today
-        return false
-    }
-
     func todayTemplateChooserModel(for date: LocalDay? = nil) throws -> DayTemplateChooserModel {
         let resolvedDate = date ?? LocalDay.today()
         return try SamoyedPresentation.templatesScreenModel(
@@ -423,14 +414,6 @@ final class SamoyedStore {
 
     func assignedTemplateID(for weekday: Weekday) -> UUID? {
         document.weekdayRules.first(where: { $0.weekday == weekday })?.savedTemplateID
-    }
-
-    func overrideTemplateID(for date: LocalDay) -> UUID? {
-        document.overrides.first(where: { $0.date == date })?.savedTemplateID
-    }
-
-    var tomorrowOverrideTemplateID: UUID? {
-        overrideTemplateID(for: LocalDay.today().adding(days: 1))
     }
 
     var isReady: Bool {
@@ -901,8 +884,8 @@ final class SamoyedStore {
     // MARK: Persistence & System Sync
 
     private func documentDidChange() {
-        // The P0 app keeps the dormant widget projection fresh, but it does not
-        // automatically start activities or schedule notifications.
+        // Refresh widgets and existing activities after a durable document change.
+        // Starting a Live Activity remains an explicit user action.
         refreshVisualSystemSurfaces()
         syncCurrentBlockLiveActivity(
             referenceDate: SamoyedSimulationClock.adjusted(.now)

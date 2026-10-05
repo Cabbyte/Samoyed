@@ -40,12 +40,12 @@ test('bootstrap snapshot/cursor and pull include later writes exactly once',asyn
  await service.push(alice,command());const page=await repo.pull(alice,boot.cursor);assert.equal(page.changes.length,1);assert.equal((await repo.pull(alice,page.cursor)).changes.length,0);db.db.close();
 });
 test('HTTP ignores client-supplied ownership and blocks later commands for conflicted object',async()=>{
- const {repo,alice,db}=await setup();const app=createApp({instanceID:'test',authMode:'self-hosted',repository:()=>repo,authenticate:async()=>alice});
+ const {repo,alice,db}=await setup();const app=createApp({instanceID:'test',repository:()=>repo,authenticate:async()=>alice});
  const op=command();let response=await app.request('/v1/sync/push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operations:[{...op,userID:'bob'}]})});assert.equal(response.status,400);
  response=await app.request('/v1/sync/push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operations:[{...op,expectedRevision:5},op]})});assert.deepEqual((await response.json() as {results:any[]}).results.map((r:any)=>r.status),['rejected','blocked']);db.db.close();
 });
 test('an unauthenticated deployment never accepts forged Sites headers in Node adapter',async()=>{
- const {repo,db}=await setup();const app=createApp({instanceID:'test',authMode:'self-hosted',repository:()=>repo,authenticate:async()=>undefined});
+ const {repo,db}=await setup();const app=createApp({instanceID:'test',repository:()=>repo,authenticate:async()=>undefined});
  assert.equal((await app.request('/v1/sync/bootstrap',{headers:{'oai-authenticated-user-id':'alice'}})).status,401);db.db.close();
 });
 test('shared wall-time fixtures match gap/repetition/midnight policy',()=>{

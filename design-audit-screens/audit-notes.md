@@ -2,6 +2,8 @@
 
 审阅日期：2026-06-12
 
+历史审阅记录：以下截图与问题对应当时版本，不作为当前待办清单。当前界面合同见 [Design.md](../Design.md)，后续修复见 [Today/Nest QA](../docs/qa/2026-10-02-today-nest-ui.md)。
+
 范围：根据 `Design.md`、`PRD.md`、`SystemSurfaces.md`，结合 iPhone 17 Pro 模拟器实机截图，审阅当前主 App 与系统表面设计的不完善处。
 
 ## 截图证据

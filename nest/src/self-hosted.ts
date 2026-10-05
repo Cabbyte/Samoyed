@@ -43,6 +43,6 @@ export function selfHostedApp(repo:Repository,identity:NestAuth,config:AuthConfi
   });
  }
  app.use('/mcp',async(c,next)=>{await next();if(c.res.status===401)c.header('WWW-Authenticate',`Bearer resource_metadata="${config.origin}/.well-known/oauth-protected-resource/mcp"`);});
- app.route('/',createApp({instanceID:config.instanceID,authMode:'self-hosted',repository:()=>repo,authenticate:r=>identity.authenticate(r,new URL(r.url).pathname==='/mcp'?identity.mcpResource:identity.apiResource)}));
+ app.route('/',createApp({instanceID:config.instanceID,repository:()=>repo,authenticate:r=>identity.authenticate(r,new URL(r.url).pathname==='/mcp'?identity.mcpResource:identity.apiResource)}));
  return app;
 }

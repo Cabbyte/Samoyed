@@ -1,20 +1,11 @@
 import AppIntents
 import SwiftUI
-import UIKit
-import UserNotifications
 
 // `@main` 是 SwiftUI App 的程序入口，作用接近 C++ 里的 `int main()`。
 // 不同点在于：事件循环、窗口生命周期、应用启动时机都由 iOS 系统掌管，
 // 我们只需要提供一个 `App` 值，告诉系统“根场景(scene)长什么样”。
 @main
 struct SamoyedApp: App {
-    // `UIApplicationDelegateAdaptor` 是 SwiftUI 和传统 UIKit 生命周期的桥梁。
-    // 可以把它理解成：
-    // - SwiftUI 负责声明式 UI
-    // - AppDelegate 负责接系统级回调
-    // 两边都能存在，但各自负责不同层面的事情。
-    @UIApplicationDelegateAdaptor(SamoyedAppDelegate.self) private var appDelegate
-
     var body: some Scene {
         // `WindowGroup` 代表应用的主窗口集合。
         // 在 iPhone 上通常可以粗略理解为“主界面容器”。
@@ -39,7 +30,7 @@ struct SamoyedApp: App {
 // `ContentView` 是整个 SwiftUI 树的“组合根(composition root)”。
 // 这里做的事情主要有三类：
 // 1. 创建并长期持有 `SamoyedStore`
-// 2. 监听系统入口（deep link、场景激活、快捷操作）
+// 2. 监听系统入口（deep link、场景激活）
 // 3. 把这些系统事件翻译成对 store 的显式调用
 struct ContentView: View {
     // `scenePhase` 反映当前场景状态：前台 active、非活跃 inactive、后台 background。
@@ -105,10 +96,10 @@ struct ContentView: View {
             .task {
                 // `.task` 会在视图出现后执行一次异步/副作用逻辑。
                 // 可以把它看成“和这个 View 生命周期绑定的启动钩子”。
+                SamoyedLegacySurfaceMigration.apply()
                 store.loadIfNeeded()
                 await store.nest.restore(store: store)
                 consumePendingExternalRoute()
-                SamoyedSystemSurfaceDormancy.apply()
             }
             .task(id: remoteRoutineImportRequest?.id) {
                 await loadRemoteRoutineImportIfNeeded()
@@ -116,10 +107,7 @@ struct ContentView: View {
             // 当系统用 URL 打开 app 时，这里会收到回调。
             // iOS 的 deep link、widget 点击、shortcut 跳转，很多最终都会落到这里。
             .onOpenURL(perform: applyExternalURL)
-            // 这里监听的是“应用内部”转发出来的外部路由事件。
-            // 为什么还需要一层 NotificationCenter？
-            // 因为有些系统入口（比如快捷操作）发生在 SwiftUI 视图树建立前后，
-            // 先缓存 URL，再由 ContentView 消费，会更稳定。
+            // UI fixtures can enqueue a route before the root view appears.
             .onReceive(NotificationCenter.default.publisher(for: .samoyedExternalRouteDidChange)) { notification in
                 guard let url = notification.object as? URL else { return }
                 applyExternalURL(url)
@@ -146,9 +134,7 @@ struct ContentView: View {
     }
 
     private func consumePendingExternalRoute() {
-        // 如果系统事件比 UI 先到达（例如 AppDelegate / SceneDelegate 先收到），
-        // URL 会暂存在 `SamoyedExternalRouteCenter` 里。
-        // 这里就是把缓存取出来并真正应用到当前 UI 状态。
+        // Consume routes queued by the UI fixture before the root view appeared.
         guard let pendingURL = SamoyedExternalRouteCenter.shared.consumePendingURL() else {
             return
         }
@@ -321,52 +307,6 @@ struct AppShellView: View {
     }
 }
 
-// MARK: - App Lifecycle
-
-// `AppDelegate` 仍然是接收“应用级”UIKit 回调的标准入口。
-// SwiftUI 并没有让它消失，只是把 UI 声明从这里挪走了。
-final class SamoyedAppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        configurationForConnecting connectingSceneSession: UISceneSession,
-        options: UIScene.ConnectionOptions
-    ) -> UISceneConfiguration {
-        // 一个 iOS 应用可以有多个 scene（多窗口/多实例概念）。
-        // 这里告诉系统：新场景要使用哪个 scene delegate。
-        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-        configuration.delegateClass = SamoyedSceneDelegate.self
-
-        // 如果用户是通过主屏快捷操作启动 app，系统会把 shortcutItem 放在这里。
-        if let shortcutItem = options.shortcutItem {
-            _ = SamoyedQuickActionManager.handle(shortcutItem)
-        }
-
-        return configuration
-    }
-
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
-        Task { @MainActor in
-            SamoyedSystemSurfaceDormancy.apply()
-        }
-        return true
-    }
-}
-
-// `SceneDelegate` 负责场景级(system scene level)事件。
-// 在这里我们只关心快捷操作的二次分发。
-final class SamoyedSceneDelegate: NSObject, UIWindowSceneDelegate {
-    func windowScene(
-        _ windowScene: UIWindowScene,
-        performActionFor shortcutItem: UIApplicationShortcutItem,
-        completionHandler: @escaping (Bool) -> Void
-    ) {
-        completionHandler(SamoyedQuickActionManager.handle(shortcutItem))
-    }
-}
-
 // MARK: - External Routing
 
 // `Notification.Name` 的扩展只是给字符串事件名一个强类型包装，
@@ -395,127 +335,6 @@ final class SamoyedExternalRouteCenter {
         let url = pendingURL
         pendingURL = nil
         return url
-    }
-}
-
-private enum SamoyedQuickActionRouteKey {
-    // 主屏快捷操作的 `userInfo` 是字典，key 仍然用字符串；
-    // 用一个小 enum 集中管理，避免硬编码散落。
-    static let routeURL = "routeURL"
-}
-
-@MainActor
-enum SamoyedQuickActionManager {
-    // `refresh` 会动态生成主屏快捷操作列表。
-    // iOS 允许我们在运行时更新这些入口，而不是只能写死在 Info.plist。
-    static func refresh(referenceDate: Date = .now) {
-        var items: [UIApplicationShortcutItem] = [
-            shortcutItem(
-                type: SamoyedSharedConfig.quickActionNow,
-                title: "Now",
-                subtitle: "Open the current focus",
-                systemImageName: "bolt.circle",
-                route: .now(source: .quickAction)
-            ),
-            shortcutItem(
-                type: SamoyedSharedConfig.quickActionToday,
-                title: "Today",
-                subtitle: "Open today's timeline",
-                systemImageName: "calendar",
-                route: .today(date: .today(), blockID: nil, taskID: nil, source: .quickAction)
-            ),
-            shortcutItem(
-                type: SamoyedSharedConfig.quickActionLibrary,
-                title: "Library",
-                subtitle: "Choose today’s routine",
-                systemImageName: "square.stack.3d.up",
-                route: .library(source: .quickAction)
-            )
-        ]
-
-        let executor = SamoyedSystemActionExecutor()
-        if
-            let snapshot = try? executor.currentSnapshot(at: referenceDate),
-            let currentBlock = snapshot.currentBlock,
-            let routeURL = SamoyedSystemRoute.today(
-                date: currentBlock.date,
-                blockID: currentBlock.blockID,
-                taskID: snapshot.topTask?.taskID,
-                source: .quickAction
-            ).url
-        {
-            items.insert(
-                UIApplicationShortcutItem(
-                    type: SamoyedSharedConfig.quickActionCurrentBlock,
-                    localizedTitle: currentBlock.title,
-                    localizedSubtitle: currentBlock.timeRangeText,
-                    icon: UIApplicationShortcutIcon(systemImageName: "scope"),
-                    userInfo: [
-                        SamoyedQuickActionRouteKey.routeURL: routeURL.absoluteString as NSString
-                    ]
-                ),
-                at: 1
-            )
-        }
-
-        UIApplication.shared.shortcutItems = items
-    }
-
-    @discardableResult
-    static func handle(_ shortcutItem: UIApplicationShortcutItem) -> Bool {
-        // 系统给的是 `UIApplicationShortcutItem`，而 app 内部只想处理 URL 路由。
-        // 这里负责把前者翻译成后者。
-        guard let routeURL = routeURL(for: shortcutItem) else {
-            return false
-        }
-
-        SamoyedExternalRouteCenter.shared.enqueue(routeURL)
-        return true
-    }
-
-    private static func shortcutItem(
-        type: String,
-        title: String,
-        subtitle: String,
-        systemImageName: String,
-        route: SamoyedSystemRoute
-    ) -> UIApplicationShortcutItem {
-        // `UIApplicationShortcutItem` 就是 iOS 主屏长按图标弹出的快捷入口定义。
-        UIApplicationShortcutItem(
-            type: type,
-            localizedTitle: title,
-            localizedSubtitle: subtitle,
-            icon: UIApplicationShortcutIcon(systemImageName: systemImageName),
-            userInfo: [
-                SamoyedQuickActionRouteKey.routeURL: (route.url?.absoluteString ?? "") as NSString
-            ]
-        )
-    }
-
-    private static func routeURL(for shortcutItem: UIApplicationShortcutItem) -> URL? {
-        // 优先读取我们自己存进去的 routeURL；如果没有，再根据 type 回退。
-        if
-            let routeString = shortcutItem.userInfo?[SamoyedQuickActionRouteKey.routeURL] as? String,
-            let url = URL(string: routeString)
-        {
-            return url
-        }
-
-        switch shortcutItem.type {
-        case SamoyedSharedConfig.quickActionNow:
-            return SamoyedSystemRoute.now(source: .quickAction).url
-        case SamoyedSharedConfig.quickActionToday:
-            return SamoyedSystemRoute.today(
-                date: .today(),
-                blockID: nil,
-                taskID: nil,
-                source: .quickAction
-            ).url
-        case SamoyedSharedConfig.quickActionLibrary:
-            return SamoyedSystemRoute.library(source: .quickAction).url
-        default:
-            return nil
-        }
     }
 }
 

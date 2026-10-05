@@ -1,5 +1,4 @@
 import SwiftUI
-import UserNotifications
 
 struct ActivationRootView: View {
     @Environment(\.openURL) private var openURL
@@ -8,7 +7,6 @@ struct ActivationRootView: View {
     @State private var selectedWeekdays: Set<Weekday> = [
         .monday, .tuesday, .wednesday, .thursday, .friday
     ]
-    @State private var notificationsRequested = false
     @State private var isStarting = false
 
     var body: some View {
@@ -138,8 +136,6 @@ struct ActivationRootView: View {
             }
 
             Section("Preferences") {
-                Toggle("Notifications", isOn: $notificationsRequested)
-                    .frame(minHeight: 44)
                 LabeledContent("Planner", value: "Not Connected")
             }
 
@@ -168,10 +164,6 @@ struct ActivationRootView: View {
     private func startUsingSamoyed() {
         isStarting = true
         Task {
-            if notificationsRequested {
-                _ = try? await UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .sound])
-            }
             await MainActor.run {
                 defer { isStarting = false }
                 do {

@@ -1,7 +1,7 @@
 # Samoyed System Surfaces
 
-- 版本：v1.0
-- 日期：2026-08-14
+- 版本：2.2 private beta
+- 日期：2026-10-05
 - 状态：实现契约
 
 系统表面只放大 Samoyed 已有的 `Now` 价值：低成本查看当前状态，以及完成一条明确的未完成 checklist。它们不承担 Routine、Template、Feedback 或 Suggestion 的创建和编辑。
@@ -15,9 +15,9 @@
 | Live Activity | Lock Screen | 打开当前内容；完成最多两条未完成 checklist |
 | Dynamic Island | compact、minimal、expanded | 打开当前内容；expanded 可完成最多两条未完成 checklist |
 | App Shortcuts | 六个固定 intent | Open Now、Open Today、Open Current Block、Complete Current Task、Start Live Activity、End Live Activity |
-| Notification Actions | 共享 route/action 层 | 只使用明确的导航或完成动作 |
+| 通知、Home Screen Quick Actions、Control Widgets | 未启用 | 当前不注册或调度；保留旧版本遗留数据清理。 |
 
-Control Widget 类型可以保留为兼容代码，但不注册到生产 `WidgetBundle`。
+生产 `WidgetBundle` 仅注册 Now Widget 与 Current Block Live Activity。未启用的 Control Widget、旧通知协调器和 Quick Action 处理器已移除；六个 App Shortcuts 保留。
 
 ## 2. Widget 状态机
 
@@ -30,7 +30,7 @@ Widget 快照必须显式标记以下一种状态，UI 不得根据 `remainingTa
 | `needsSetup` | 尚无可激活文档或今天没有 Routine | 明确提示选择 Routine；跳转 Library |
 | `unavailable` | 有数据但当前没有有效非空 block，或读取失败 | 明确提示打开 Samoyed；不得渲染为 caught-up |
 
-所有 Widget action 都是 completion-only：快照不包含已完成任务，交互 intent 只接受 `false → true`，重复执行保持可预测。系统支持五个 WidgetKit family；加上 Live Activity 构成六类已交付系统表面。
+所有 Widget action 都是 completion-only：快照不包含已完成任务，交互 intent 只接受 `false → true`，重复执行保持可预测。系统支持五个 WidgetKit family；加上 Live Activity 构成六类已实现系统表面；真机验收范围另记在 QA 文档。
 
 ## 3. Accessory、Live Activity 与 Dynamic Island
 
@@ -54,7 +54,7 @@ Lock Screen 与 Dynamic Island 使用同一 ContentState、同一 deep link 和�
 - 系统入口统一通过 `SamoyedSystemRoute` 生成 URL。
 - 目标 task/block 过期或不存在时安全失败，不猜测替代目标。
 - Widget、Live Activity、App Intent 与 App 共享同一 repository 和原子写入路径。
-- App 侧文档变更刷新 Widget，并同步已存在的 Live Activity。
+- App 侧文档变更刷新 Widget，并同步已存在的 Live Activity；账号分区的执行写入进入同一 outbox。
 - production intent 不提供 Feedback、Suggestion、Routine 或 Template authoring。
 
 ## 5. App Intents 冻结清单
